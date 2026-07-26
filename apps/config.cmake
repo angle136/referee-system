@@ -1,10 +1,10 @@
-# 机器人 & 板型 配置
+﻿# 机器人 & 板型 配置
 # 默认值在这里改；也可用 -DROBOT=xxx -DBOARD=xxx 覆盖
 # 注意：已配置过的 build 目录以缓存值为准，改本文件默认值不影响旧 build 目录
 
 # 目标机器人 & 板型
-set(ROBOT "test" CACHE STRING "Target robot")
-set_property(CACHE ROBOT PROPERTY STRINGS hero engineer infantry3 infantry4 infantry5 drone sentry darts customcontrol)
+set(ROBOT "referee_main" CACHE STRING "Target robot")
+set_property(CACHE ROBOT PROPERTY STRINGS hero engineer infantry3 infantry4 infantry5 drone sentry darts customcontrol referee_main)
 set(BOARD "single" CACHE STRING "Board role")
 set_property(CACHE BOARD PROPERTY STRINGS single gimbal chassis)
 

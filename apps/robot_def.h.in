@@ -1,4 +1,4 @@
-#ifndef _ROBOT_DEF_H_
+﻿#ifndef _ROBOT_DEF_H_
 #define _ROBOT_DEF_H_
 
 /* 机器人类型定义 */
@@ -10,6 +10,7 @@
 #define ROBOT_DRONE     6
 #define ROBOT_SENTRY    7
 #define ROBOT_DARTS     8
+#define ROBOT_REFEREE_MAIN 100
 
 /* 当前编译的机器人 — 由 CMake 根据 ROBOT 选项自动生成 */
 #define CURRENT_ROBOT   ROBOT_@ROBOT_UPPER@
@@ -17,3 +18,4 @@
 #define ROBOT_TYPE      CURRENT_ROBOT
 
 #endif // _ROBOT_DEF_H_
+
