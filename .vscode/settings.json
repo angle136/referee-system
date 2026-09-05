@@ -1,0 +1,4 @@
+{
+    "cortex-debug.JLinkGDBServerPath": "C:/Code for environment/JLink_V914a/JLinkGDBServerCL.exe",
+    "cortex-debug.armToolchainPath": "C:/Code for environment/arm-gnu-toolchain/bin"
+}

@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "J-Link Flash and Debug",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "executable": "${command:cmake.launchTargetPath}",
+            "servertype": "jlink",
+            "device": "STM32G030F6",
+            "interface": "swd",
+            "runToEntryPoint": "main",
+            "serverArgs": [
+                "-speed",
+                "4000"
+            ],
+            "preLaunchTask": "CMake: build Debug"
+        }
+    ]
+}

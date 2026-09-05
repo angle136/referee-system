@@ -1,0 +1,8 @@
+device STM32G030F6
+si SWD
+speed 4000
+r
+loadfile build/Debug/siglebroad_1.elf
+r
+g
+q
