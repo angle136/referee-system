@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Armor G030: J-Link Flash and Debug",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/firmware/armor_subboard_g030",
+            "executable": "${workspaceFolder}/firmware/armor_subboard_g030/build/Debug/siglebroad_1.elf",
+            "servertype": "jlink",
+            "device": "STM32G030F6",
+            "interface": "swd",
+            "runToEntryPoint": "main",
+            "serverArgs": [
+                "-speed",
+                "4000"
+            ],
+            "preLaunchTask": "CMake: build armor Debug"
+        }
+    ]
+}
