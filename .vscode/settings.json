@@ -1,5 +1,0 @@
-{
-    "cmake.sourceDirectory": "${workspaceFolder}/firmware/armor_subboard_g030",
-    "cortex-debug.JLinkGDBServerPath": "C:/Code for environment/JLink_V914a/JLinkGDBServerCL.exe",
-    "cortex-debug.armToolchainPath": "C:/Code for environment/arm-gnu-toolchain/bin"
-}
