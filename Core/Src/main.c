@@ -45,12 +45,18 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+volatile uint32_t ozone_run_count = 0U;
+volatile uint32_t ozone_adc_raw = 0U;
+volatile uint32_t ozone_dx_level = 0U;
+volatile uint32_t ozone_led_phase = 0U;
+volatile uint32_t ozone_adc_error_count = 0U;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+static uint32_t BoardTest_ReadAdcRaw(void);
 
 /* USER CODE END PFP */
 
@@ -91,6 +97,10 @@ int main(void)
   MX_ADC1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
+  {
+    ozone_adc_error_count++;
+  }
 
   /* USER CODE END 2 */
 
@@ -101,6 +111,23 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    ozone_run_count++;
+    ozone_adc_raw = BoardTest_ReadAdcRaw();
+    ozone_dx_level = (HAL_GPIO_ReadPin(DX_INPUT_GPIO_Port, DX_INPUT_Pin) == GPIO_PIN_SET) ? 1U : 0U;
+    ozone_led_phase ^= 1U;
+
+    if (ozone_led_phase != 0U)
+    {
+      HAL_GPIO_WritePin(LED_B_GPIO_Port, LED_B_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
+    }
+    else
+    {
+      HAL_GPIO_WritePin(LED_B_GPIO_Port, LED_B_Pin, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
+    }
+
+    HAL_Delay(250);
   }
   /* USER CODE END 3 */
 }
@@ -146,6 +173,32 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+static uint32_t BoardTest_ReadAdcRaw(void)
+{
+  uint32_t adc_raw = ozone_adc_raw;
+
+  if (HAL_ADC_Start(&hadc1) != HAL_OK)
+  {
+    ozone_adc_error_count++;
+    return adc_raw;
+  }
+
+  if (HAL_ADC_PollForConversion(&hadc1, 10U) == HAL_OK)
+  {
+    adc_raw = HAL_ADC_GetValue(&hadc1);
+  }
+  else
+  {
+    ozone_adc_error_count++;
+  }
+
+  if (HAL_ADC_Stop(&hadc1) != HAL_OK)
+  {
+    ozone_adc_error_count++;
+  }
+
+  return adc_raw;
+}
 
 /* USER CODE END 4 */
 

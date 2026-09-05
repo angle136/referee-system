@@ -16,6 +16,28 @@
                 "4000"
             ],
             "preLaunchTask": "CMake: build Debug"
+        },
+        {
+            "name": "ST-Link Flash and Debug",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "executable": "${command:cmake.launchTargetPath}",
+            "servertype": "openocd",
+            "device": "STM32G030F6",
+            "interface": "swd",
+            "svdFile": "C:/Program Files/SEGGER/Ozone/Config/Peripherals/STM32G030.svd",
+            "serverArgs": [
+                "-c",
+                "adapter speed 100"
+            ],
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32g0x.cfg"
+            ],
+            "runToEntryPoint": "main",
+            "showDevDebugOutput": "raw",
+            "preLaunchTask": "CMake: build Debug"
         }
     ]
 }
