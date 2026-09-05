@@ -1,4 +1,8 @@
 {
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build/Debug",
+        "--query-driver=C:/msys64/mingw64/bin/arm-none-eabi-*.exe,C:/Code for environment/arm-gnu-toolchain/bin/arm-none-eabi-*.exe"
+    ],
     "cortex-debug.JLinkGDBServerPath": "C:/Code for environment/JLink_V914a/JLinkGDBServerCL.exe",
     "cortex-debug.armToolchainPath": "C:/Code for environment/arm-gnu-toolchain/bin"
 }
