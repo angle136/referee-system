@@ -51,11 +51,40 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+static uint16_t App_ReadAdcRaw(void);
+static void App_SendStatus(uint32_t tick_ms, uint16_t adc_raw, GPIO_PinState dx_state);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void App_AppendText(char **cursor, const char *text)
+{
+  while (*text != '\0')
+  {
+    **cursor = *text;
+    (*cursor)++;
+    text++;
+  }
+}
+
+static void App_AppendU32(char **cursor, uint32_t value)
+{
+  char digits[10];
+  uint8_t count = 0;
+
+  do
+  {
+    digits[count++] = (char)('0' + (value % 10U));
+    value /= 10U;
+  } while (value != 0U);
+
+  while (count > 0U)
+  {
+    **cursor = digits[--count];
+    (*cursor)++;
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -91,6 +120,10 @@ int main(void)
   MX_ADC1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  HAL_ADCEx_Calibration_Start(&hadc1);
+
+  HAL_GPIO_WritePin(LED_B_GPIO_Port, LED_B_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
 
   /* USER CODE END 2 */
 
@@ -101,6 +134,23 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    uint32_t now = HAL_GetTick();
+    uint16_t adc_raw = App_ReadAdcRaw();
+    GPIO_PinState dx_state = HAL_GPIO_ReadPin(DX_INPUT_GPIO_Port, DX_INPUT_Pin);
+
+    if ((now / 500U) % 2U == 0U)
+    {
+      HAL_GPIO_WritePin(LED_B_GPIO_Port, LED_B_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
+    }
+    else
+    {
+      HAL_GPIO_WritePin(LED_B_GPIO_Port, LED_B_Pin, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
+    }
+
+    App_SendStatus(now, adc_raw, dx_state);
+    HAL_Delay(100);
   }
   /* USER CODE END 3 */
 }
@@ -146,6 +196,37 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+static uint16_t App_ReadAdcRaw(void)
+{
+  uint16_t adc_raw = 0U;
+
+  if (HAL_ADC_Start(&hadc1) == HAL_OK)
+  {
+    if (HAL_ADC_PollForConversion(&hadc1, 10U) == HAL_OK)
+    {
+      adc_raw = (uint16_t)HAL_ADC_GetValue(&hadc1);
+    }
+    HAL_ADC_Stop(&hadc1);
+  }
+
+  return adc_raw;
+}
+
+static void App_SendStatus(uint32_t tick_ms, uint16_t adc_raw, GPIO_PinState dx_state)
+{
+  char tx_buffer[64];
+  char *cursor = tx_buffer;
+
+  App_AppendText(&cursor, "armor_test tick=");
+  App_AppendU32(&cursor, tick_ms);
+  App_AppendText(&cursor, " adc=");
+  App_AppendU32(&cursor, adc_raw);
+  App_AppendText(&cursor, " dx=");
+  App_AppendU32(&cursor, (dx_state == GPIO_PIN_SET) ? 1U : 0U);
+  App_AppendText(&cursor, "\r\n");
+
+  HAL_UART_Transmit(&huart2, (uint8_t *)tx_buffer, (uint16_t)(cursor - tx_buffer), 20U);
+}
 
 /* USER CODE END 4 */
 
