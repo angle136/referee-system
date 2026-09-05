@@ -1,8 +1,13 @@
 build/
+**/build/
 CMakeFiles/
+**/CMakeFiles/
 CMakeCache.txt
+**/CMakeCache.txt
 cmake_install.cmake
+**/cmake_install.cmake
 compile_commands.json
+**/compile_commands.json
 *.map
 *.elf
 *.hex
@@ -15,7 +20,12 @@ compile_commands.json
 *.d
 *.log
 .vscode/.cmaketools.json
+**/.vscode/.cmaketools.json
 MDK-ARM/
+**/MDK-ARM/
 EWARM/
+**/EWARM/
 Core/Inc/Backup/
 Core/Src/Backup/
+**/Core/Inc/Backup/
+**/Core/Src/Backup/
