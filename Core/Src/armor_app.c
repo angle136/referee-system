@@ -10,8 +10,10 @@
 static ArmorDetectorState_t armor_detector;
 static uint32_t armor_last_heartbeat_tick;
 static uint32_t armor_last_repeat_tick;
+static uint32_t armor_led_hit_until;
 static uint8_t armor_repeat_remaining;
 static uint8_t armor_repeat_event;
+static bool armor_led_hit_active;
 
 void ArmorApp_Init(void)
 {
@@ -20,10 +22,13 @@ void ArmorApp_Init(void)
   ArmorSensor_Init();
   ArmorDetector_Init(&armor_detector, now);
   ArmorDebug_Init();
+  ArmorLed_SetHit(false);
   armor_last_heartbeat_tick = now;
   armor_last_repeat_tick = now;
+  armor_led_hit_until = now;
   armor_repeat_remaining = 0U;
   armor_repeat_event = 0U;
+  armor_led_hit_active = false;
 }
 
 void ArmorApp_RunOnce(void)
@@ -57,14 +62,22 @@ void ArmorApp_RunOnce(void)
       armor_repeat_remaining = ARMOR_HIT_REPEAT_COUNT - 1U;
       armor_last_repeat_tick = now;
       ArmorLed_SetHit(true);
+      armor_led_hit_until = now + ARMOR_HIT_LED_HOLD_MS;
+      armor_led_hit_active = true;
     }
+  }
+
+  if (armor_led_hit_active &&
+      (int32_t)(now - armor_led_hit_until) >= 0)
+  {
+    ArmorLed_SetHit(false);
+    armor_led_hit_active = false;
   }
 
   if ((uint32_t)(now - armor_last_heartbeat_tick) >= ARMOR_HEARTBEAT_PERIOD_MS)
   {
     ArmorProtocol_Send(0U, armor_adc_raw, dx_level);
     armor_last_heartbeat_tick = now;
-    ArmorLed_SetHit(false);
   }
 
   ArmorDebug_Record(now, hit_event);
