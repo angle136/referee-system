@@ -25,27 +25,30 @@ uint8_t ArmorDetector_Update(ArmorDetectorState_t *state,
 
   if (!state->baseline_ready)
   {
-    if (state->baseline_count < ARMOR_BASELINE_SAMPLES)
-    {
-      state->baseline_samples[state->baseline_index] = (uint16_t)adc_raw;
-      state->baseline_sum += adc_raw;
-      state->baseline_count++;
-    }
-    else
-    {
-      state->baseline_sum -= state->baseline_samples[state->baseline_index];
-      state->baseline_samples[state->baseline_index] = (uint16_t)adc_raw;
-      state->baseline_sum += adc_raw;
-    }
-    state->baseline_index = (state->baseline_index + 1U) % ARMOR_BASELINE_SAMPLES;
-    state->baseline = state->baseline_sum / state->baseline_count;
-    state->dx_was_active = dx_active;
-    state->ax_was_high = false;
     if ((uint32_t)(now - state->baseline_start) >= ARMOR_BASELINE_TIME_MS)
     {
       state->baseline_ready = true;
     }
-    return 0U;
+    else
+    {
+      if (state->baseline_count < ARMOR_BASELINE_SAMPLES)
+      {
+        state->baseline_samples[state->baseline_index] = (uint16_t)adc_raw;
+        state->baseline_sum += adc_raw;
+        state->baseline_count++;
+      }
+      else
+      {
+        state->baseline_sum -= state->baseline_samples[state->baseline_index];
+        state->baseline_samples[state->baseline_index] = (uint16_t)adc_raw;
+        state->baseline_sum += adc_raw;
+      }
+      state->baseline_index = (state->baseline_index + 1U) % ARMOR_BASELINE_SAMPLES;
+      state->baseline = state->baseline_sum / state->baseline_count;
+      state->dx_was_active = dx_active;
+      state->ax_was_high = false;
+      return 0U;
+    }
   }
 
   bool ax_high = (adc_raw > (state->baseline + ARMOR_AX_THRESHOLD));
