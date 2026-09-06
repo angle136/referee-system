@@ -12,6 +12,5 @@
 #define ARMOR_HIT_REPEAT_COUNT    3U
 #define ARMOR_HIT_REPEAT_GAP_MS   5U
 #define ARMOR_PACKET_SIZE         8U
-#define ARMOR_DEBUG_SAMPLE_COUNT  256U
 
 #endif

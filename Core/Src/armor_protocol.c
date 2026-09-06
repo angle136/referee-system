@@ -1,6 +1,5 @@
 #include "armor_protocol.h"
 #include "armor_config.h"
-#include "armor_debug.h"
 #include "usart.h"
 
 static uint8_t armor_protocol_seq;
@@ -22,8 +21,5 @@ void ArmorProtocol_Send(uint8_t event, uint32_t adc_raw, uint8_t dx_level)
     sum = (uint8_t)(sum + packet[i]);
   }
   packet[7] = sum;
-  if (HAL_UART_Transmit(&huart2, packet, sizeof(packet), 10U) != HAL_OK)
-  {
-    armor_tx_error_count++;
-  }
+  (void)HAL_UART_Transmit(&huart2, packet, sizeof(packet), 10U);
 }

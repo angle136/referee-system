@@ -21,12 +21,10 @@ set(MX_Include_Dirs
 set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/armor_app.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/armor_debug.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/armor_detector.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/armor_led.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/armor_protocol.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/armor_sensor.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/kfifo.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/gpio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/adc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/usart.c
