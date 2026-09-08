@@ -2,6 +2,9 @@
 #define ARMOR_CONFIG_H
 
 #define ARMOR_ID                  0U
+#define ARMOR_MAX_ID              3U
+#define ARMOR_TEAM_RED            0U
+#define ARMOR_TEAM_BLUE           1U
 #define ARMOR_DX_ACTIVE_HIGH      1U
 #define ARMOR_HEARTBEAT_PERIOD_MS 50U
 #define ARMOR_BASELINE_TIME_MS    500U
@@ -13,5 +16,11 @@
 #define ARMOR_HIT_REPEAT_GAP_MS   5U
 #define ARMOR_PACKET_SIZE         8U
 #define ARMOR_TX_QUEUE_CAPACITY   16U
+#define ARMOR_RX_QUEUE_CAPACITY   64U
+#define ARMOR_LINK_FRAME_SIZE     8U
+#define ARMOR_LINK_CMD_CONFIG     0xC1U
+#define ARMOR_LINK_ONLINE_TIMEOUT_MS 500U
+#define ARMOR_LINK_FLASH_HALF_PERIOD_MS 100U
+#define ARMOR_KEY_DEBOUNCE_MS     20U
 
 #endif

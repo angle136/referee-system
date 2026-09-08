@@ -1,6 +1,7 @@
 #include "armor_app.h"
 #include "armor_config.h"
 #include "armor_detector.h"
+#include "armor_link.h"
 #include "armor_led.h"
 #include "armor_protocol.h"
 #include "armor_sensor.h"
@@ -21,7 +22,8 @@ void ArmorApp_Init(void)
   ArmorSensor_Init();
   ArmorDetector_Init(&armor_detector, now);
   ArmorProtocol_Init();
-  ArmorLed_SetHit(false);
+  ArmorLink_Init();
+  ArmorLed_SetState(ArmorLink_GetTeam(), false);
   armor_last_heartbeat_tick = now;
   armor_last_repeat_tick = now;
   armor_led_hit_until = now;
@@ -37,6 +39,7 @@ void ArmorApp_RunOnce(void)
   uint8_t dx_level;
   uint8_t hit_event;
 
+  ArmorLink_Process(now);
   adc_raw = ArmorSensor_ReadAdcRaw();
   dx_level = ArmorSensor_ReadDxLevel();
   hit_event = ArmorDetector_Update(&armor_detector, now, adc_raw, dx_level);
@@ -57,7 +60,6 @@ void ArmorApp_RunOnce(void)
       ArmorProtocol_Send(hit_event, adc_raw, dx_level);
       armor_repeat_remaining = ARMOR_HIT_REPEAT_COUNT - 1U;
       armor_last_repeat_tick = now;
-      ArmorLed_SetHit(true);
       armor_led_hit_until = now + ARMOR_HIT_LED_HOLD_MS;
       armor_led_hit_active = true;
     }
@@ -66,7 +68,6 @@ void ArmorApp_RunOnce(void)
   if (armor_led_hit_active &&
       (int32_t)(now - armor_led_hit_until) >= 0)
   {
-    ArmorLed_SetHit(false);
     armor_led_hit_active = false;
   }
 
@@ -74,6 +75,15 @@ void ArmorApp_RunOnce(void)
   {
     ArmorProtocol_Send(0U, adc_raw, dx_level);
     armor_last_heartbeat_tick = now;
+  }
+
+  if (ArmorLink_IsTransitioning())
+  {
+    ArmorLed_SetTransition(ArmorLink_TransitionRedOn());
+  }
+  else
+  {
+    ArmorLed_SetState(ArmorLink_GetTeam(), armor_led_hit_active);
   }
 
 }

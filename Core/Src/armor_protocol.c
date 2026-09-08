@@ -5,6 +5,7 @@
 #include "usart.h"
 
 static uint8_t armor_protocol_seq;
+static uint8_t armor_protocol_armor_id;
 static Kfifo_t armor_tx_fifo;
 static uint8_t armor_tx_storage[ARMOR_TX_QUEUE_CAPACITY][ARMOR_PACKET_SIZE];
 static uint8_t armor_tx_active_packet[ARMOR_PACKET_SIZE];
@@ -33,7 +34,13 @@ void ArmorProtocol_Init(void)
              ARMOR_PACKET_SIZE,
              ARMOR_TX_QUEUE_CAPACITY);
   armor_protocol_seq = 0U;
+  armor_protocol_armor_id = ARMOR_ID;
   armor_tx_active = false;
+}
+
+void ArmorProtocol_SetArmorId(uint8_t armor_id)
+{
+  armor_protocol_armor_id = armor_id;
 }
 
 void ArmorProtocol_Send(uint8_t event, uint32_t adc_raw, uint8_t dx_level)
@@ -42,7 +49,7 @@ void ArmorProtocol_Send(uint8_t event, uint32_t adc_raw, uint8_t dx_level)
   uint8_t sum = 0U;
 
   packet[0] = 0xA5U;
-  packet[1] = ARMOR_ID;
+  packet[1] = armor_protocol_armor_id;
   packet[2] = event;
   packet[3] = dx_level;
   packet[4] = (uint8_t)(adc_raw & 0xFFU);
