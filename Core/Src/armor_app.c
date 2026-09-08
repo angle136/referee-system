@@ -20,6 +20,7 @@ void ArmorApp_Init(void)
 
   ArmorSensor_Init();
   ArmorDetector_Init(&armor_detector, now);
+  ArmorProtocol_Init();
   ArmorLed_SetHit(false);
   armor_last_heartbeat_tick = now;
   armor_last_repeat_tick = now;

@@ -4,5 +4,6 @@
 #include <stdint.h>
 
 void ArmorProtocol_Send(uint8_t event, uint32_t adc_raw, uint8_t dx_level);
+void ArmorProtocol_Init(void);
 
 #endif

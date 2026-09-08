@@ -12,5 +12,6 @@
 #define ARMOR_HIT_REPEAT_COUNT    3U
 #define ARMOR_HIT_REPEAT_GAP_MS   5U
 #define ARMOR_PACKET_SIZE         8U
+#define ARMOR_TX_QUEUE_CAPACITY   16U
 
 #endif
