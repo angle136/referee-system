@@ -13,10 +13,6 @@
 #include "usbd_cdc_acm_user.h"
 #endif
 #include "bsp_led.h"
-#include "bsp_beep.h"
-#if BSP_CAN_ENABLE
-#include "bsp_can_task.h"
-#endif
 #include "gpio.h"
 
 #define LOG_LVL LOG_LVL_INFO
@@ -57,10 +53,6 @@ void BSP_Init(void)
 #endif
 
     BSP_LED_Init();
-    BSP_BEEP_Init();
-#if BSP_CAN_ENABLE
-    BSP_CAN_TaskInit();
-#endif
 
     LOG_I("BSP Init finish");
 }

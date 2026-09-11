@@ -9,6 +9,9 @@ set(THREADX_ARCH cortex_m3)
 # 本板无 USB（CubeMX 未启用），关闭 BSP USB 外设，DWC2 端口自动联动关闭
 set(BSP_USB_ENABLE OFF)
 set(BSP_SPI_ENABLE OFF)
+set(BSP_CAN_ENABLE OFF)
+set(BSP_PWM_ENABLE OFF)
+set(BSP_BEEP_ENABLE OFF)
 # 公共构建逻辑
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/board_common.cmake)
 
