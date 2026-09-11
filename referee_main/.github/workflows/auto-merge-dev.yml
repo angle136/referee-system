@@ -1,0 +1,63 @@
+name: Auto-merge dev → dev-systemview
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use PAT so the resulting push triggers downstream CI.
+          # Without this, GITHUB_TOKEN pushes skip workflow triggers
+          # to prevent recursion.
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Merge dev into dev-systemview
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 注册 .gitattributes 里声明的 merge=ours driver。
+          # 没有这一行，threadx/** 和 utils/** 的 merge=ours 不会生效，
+          # 这两个目录仍会在合并时产生大量冲突。
+          git config merge.ours.driver true
+
+          git checkout dev-systemview
+
+          if git merge origin/dev -m "Auto-merge dev into dev-systemview"; then
+            echo "MERGE_OK=true" >> $GITHUB_ENV
+          else
+            echo "MERGE_OK=false" >> $GITHUB_ENV
+            git merge --abort
+          fi
+
+      - name: Push merged branch
+        if: env.MERGE_OK == 'true'
+        run: git push origin dev-systemview
+
+      - name: Notify conflict — create PR
+        if: env.MERGE_OK == 'false'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          base: dev-systemview
+          branch: auto/dev-merge-conflict
+          title: "⚠️ Merge conflict: dev → dev-systemview"
+          body: |
+            Auto-merge from `dev` failed due to conflicts.
+            Resolve manually:
+
+            ```bash
+            git fetch origin
+            git checkout dev-systemview
+            git merge origin/dev
+            # resolve conflicts, commit, then:
+            git push origin dev-systemview
+            ```
+          delete-branch: true

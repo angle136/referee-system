@@ -1,0 +1,15 @@
+# CMake构建目录
+build/
+build_*/
+cmake-build-*/
+.cache/
+
+# 调试文件
+*.log
+*.tmp
+*.jdebug.user
+
+# OS文件
+.DS_Store
+Thumbs.db
+desktop.ini
