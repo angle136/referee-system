@@ -95,6 +95,9 @@ int main(void)
   MX_DMA_Init();
   MX_I2C1_Init();
   MX_IWDG_Init();
+  /* The IWDG starts before ThreadX is entered. Reload once immediately so
+     peripheral setup cannot consume the first watchdog window. */
+  HAL_IWDG_Refresh(&hiwdg);
   MX_UART4_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();

@@ -19,7 +19,8 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/board_common.cmake)
 # as a compiler input; this repository owns and may edit the copied sources.
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../third_party
                  ${CMAKE_CURRENT_BINARY_DIR}/third_party)
-target_link_libraries(${CMAKE_PROJECT_NAME} kk_oled)
+target_link_libraries(app PUBLIC kk_ui)
+target_link_libraries(${CMAKE_PROJECT_NAME} kk_oled kk_ui)
 
 # 板级专属 sources / includes / defines / libraries 在此追加
 # target_sources(${CMAKE_PROJECT_NAME} PRIVATE ...)

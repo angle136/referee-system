@@ -11,6 +11,7 @@
 #include "referee_config.h"
 #include "referee_packet.h"
 #include "referee_state.h"
+#include "referee_ui.h"
 #include "tx_api.h"
 #include "usart.h"
 
@@ -50,16 +51,12 @@ static uint8_t      armor_rx_buffer[REFEREE_MAIN_ARMOR_COUNT][REFEREE_MAIN_ARMOR
     BUFFER_SECTION;
 static uint8_t referee_sequence;
 static uint8_t armor_config_sequence;
-
-typedef struct
-{
-    uint8_t last_raw_pressed;
-    uint8_t stable_pressed;
-    ULONG   raw_changed_tick;
-} referee_button_t;
-
-static referee_button_t key1_state;
-static referee_button_t key2_state;
+static volatile uint32_t referee_tx_count;
+static volatile uint32_t referee_tx_error_count;
+static volatile uint32_t armor_config_tx_count;
+static volatile uint32_t armor_config_tx_error_count;
+static volatile uint32_t armor_event_drop_count;
+static volatile uint16_t referee_last_command_id;
 
 static int referee_send_frame(uint16_t command_id, const void *payload, uint16_t payload_length)
 {
@@ -69,10 +66,12 @@ static int referee_send_frame(uint16_t command_id, const void *payload, uint16_t
 
     if (referee_uart == 0)
     {
+        referee_tx_error_count++;
         return -1;
     }
     if (tx_mutex_get(&referee_tx_mutex, TX_WAIT_FOREVER) != TX_SUCCESS)
     {
+        referee_tx_error_count++;
         return -1;
     }
 
@@ -84,13 +83,21 @@ static int referee_send_frame(uint16_t command_id, const void *payload, uint16_t
                                         &referee_sequence);
     if (frame_length == 0)
     {
+        referee_tx_error_count++;
         tx_mutex_put(&referee_tx_mutex);
         return -1;
     }
 
     result = BSP_UART_Send(referee_uart, frame, frame_length, 50);
     tx_mutex_put(&referee_tx_mutex);
-    return result == frame_length ? 0 : -1;
+    if (result == frame_length)
+    {
+        referee_tx_count++;
+        referee_last_command_id = command_id;
+        return 0;
+    }
+    referee_tx_error_count++;
+    return -1;
 }
 
 static void referee_send_robot_status(void)
@@ -204,7 +211,12 @@ static void referee_send_armor_config(void)
             BSP_UART_Send(armor_uart[port_id], frame, sizeof(frame), 50U) !=
                 (int)sizeof(frame))
         {
+            armor_config_tx_error_count++;
             LOG_W("send armor config failed: port=%u", (unsigned int)port_id);
+        }
+        else
+        {
+            armor_config_tx_count++;
         }
     }
 }
@@ -238,6 +250,7 @@ static void armor_packet_received(uint8_t port_id, const armor_link_packet_t *pa
     event[ARMOR_EVENT_WORD_AX_RAW] = packet->ax_raw;
     if (tx_queue_send(&armor_event_queue, event, TX_NO_WAIT) != TX_SUCCESS)
     {
+        armor_event_drop_count++;
         LOG_W("armor event queue full");
     }
 }
@@ -326,88 +339,12 @@ static void referee_led_apply_team(uint8_t team)
 #endif
 }
 
-static void referee_led_refresh(void)
+void referee_control_refresh_led(void)
 {
     referee_state_snapshot_t snapshot;
 
     referee_state_get_snapshot(&snapshot);
     referee_led_apply_team(snapshot.team);
-}
-
-static uint8_t referee_button_read_pressed(GPIO_TypeDef *port, uint16_t pin)
-{
-    return HAL_GPIO_ReadPin(port, pin) == (GPIO_PinState)REFEREE_MAIN_KEY_ACTIVE_LEVEL;
-}
-
-static void referee_button_init(referee_button_t *button,
-                                GPIO_TypeDef *port,
-                                uint16_t pin,
-                                ULONG now)
-{
-    uint8_t pressed = referee_button_read_pressed(port, pin);
-
-    button->last_raw_pressed = pressed;
-    button->stable_pressed = pressed;
-    button->raw_changed_tick = now;
-}
-
-static uint8_t referee_button_pressed(referee_button_t *button,
-                                      GPIO_TypeDef *port,
-                                      uint16_t pin,
-                                      ULONG now)
-{
-    uint8_t pressed = referee_button_read_pressed(port, pin);
-
-    if (pressed != button->last_raw_pressed)
-    {
-        button->last_raw_pressed = pressed;
-        button->raw_changed_tick = now;
-    }
-    if ((now - button->raw_changed_tick) < REFEREE_MAIN_KEY_DEBOUNCE_MS)
-    {
-        return 0;
-    }
-    if (pressed != button->stable_pressed)
-    {
-        button->stable_pressed = pressed;
-        return pressed;
-    }
-    return 0;
-}
-
-static void referee_buttons_init(void)
-{
-    ULONG now = tx_time_get();
-
-    referee_button_init(&key1_state, KEY_1_GPIO_Port, KEY_1_Pin, now);
-    referee_button_init(&key2_state, KEY_2_GPIO_Port, KEY_2_Pin, now);
-}
-
-static void referee_buttons_process(void)
-{
-    ULONG now = tx_time_get();
-    uint8_t key1_pressed = 0;
-    uint8_t key2_pressed = 0;
-
-#if REFEREE_MAIN_BUTTON_ENABLE && REFEREE_MAIN_KEY1_ENABLE
-    key1_pressed = referee_button_pressed(&key1_state, KEY_1_GPIO_Port, KEY_1_Pin, now);
-#endif
-#if REFEREE_MAIN_BUTTON_ENABLE && REFEREE_MAIN_KEY2_ENABLE
-    key2_pressed = referee_button_pressed(&key2_state, KEY_2_GPIO_Port, KEY_2_Pin, now);
-#endif
-
-    if (key1_pressed != 0U)
-    {
-        referee_state_toggle_team();
-        referee_led_refresh();
-        LOG_I("team toggled");
-    }
-    if (key2_pressed != 0U)
-    {
-        referee_state_reset();
-        referee_led_refresh();
-        LOG_I("referee state reset");
-    }
 }
 
 static void referee_watchdog_thread_entry(ULONG thread_input)
@@ -463,7 +400,6 @@ static void referee_tx_thread_entry(ULONG thread_input)
             next_game += REFEREE_MAIN_GAME_PERIOD_MS;
         }
 
-        referee_buttons_process();
         tx_thread_sleep(REFEREE_MAIN_KEY_POLL_PERIOD_MS);
     }
 }
@@ -540,8 +476,7 @@ void robot_control_init(void)
         return;
     }
 
-    referee_buttons_init();
-    referee_led_refresh();
+    referee_control_refresh_led();
 
     status = tx_mutex_create(&referee_tx_mutex, "referee_tx", TX_INHERIT);
     if (status != TX_SUCCESS)
@@ -616,5 +551,26 @@ void robot_control_init(void)
         return;
     }
 
+    status = referee_ui_init();
+    if (status != TX_SUCCESS)
+    {
+        LOG_E("referee ui init failed: %u", status);
+    }
+
     LOG_I("referee controller started");
+}
+
+void referee_control_get_diagnostics(referee_control_diagnostics_t *diagnostics)
+{
+    if (diagnostics == 0)
+    {
+        return;
+    }
+
+    diagnostics->referee_tx_count = referee_tx_count;
+    diagnostics->referee_tx_error_count = referee_tx_error_count;
+    diagnostics->armor_config_tx_count = armor_config_tx_count;
+    diagnostics->armor_config_tx_error_count = armor_config_tx_error_count;
+    diagnostics->armor_event_drop_count = armor_event_drop_count;
+    diagnostics->last_command_id = referee_last_command_id;
 }
