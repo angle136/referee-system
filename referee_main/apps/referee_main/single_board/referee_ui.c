@@ -436,7 +436,7 @@ static void ui_draw_home(int16_t x)
                 44, labels[ui_home_selected]);
     OLED_SetDrawMode(OLED_DRAW_SET);
     ui_text_big((int16_t)(x + 1), 44, "<");
-    ui_text_big((int16_t)(x + 113), 44, ">");
+    ui_text_big((int16_t)(x + 110), 44, ">");
 }
 
 void KK_UI_CustomOnEnter(KK_UI_PageId page)
