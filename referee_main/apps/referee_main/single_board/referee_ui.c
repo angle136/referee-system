@@ -342,10 +342,10 @@ static void ui_draw_main(int16_t x)
 
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
-    ui_text_bold((int16_t)(x + 2), 3,
-                 state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B" : "TEAM R");
-    ui_text_main_large((int16_t)(x + 54), 0, "ID");
-    ui_u32_main_large((int16_t)(x + 82), 0,
+    ui_text_main_large((int16_t)(x + 2), 0,
+                       state.team == REFEREE_MAIN_TEAM_BLUE ? "BLUE" : "RED");
+    ui_text_main_large((int16_t)(x + 53), 0, "ID");
+    ui_u32_main_large((int16_t)(x + 80), 0,
                       state.team == REFEREE_MAIN_TEAM_BLUE ?
                       REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
 
@@ -359,11 +359,11 @@ static void ui_draw_main(int16_t x)
         ui_u32_main_large((int16_t)(x + 42), 44, state.hit_count);
     else
         ui_u32_big((int16_t)(x + 42), 47, state.hit_count);
-    ui_text_main_large((int16_t)(x + 70), 44, "TX");
-    if (control.referee_tx_count < 100U)
-        ui_u32_main_large((int16_t)(x + 98), 44, control.referee_tx_count);
+    ui_text_main_large((int16_t)(x + 66), 44, "TX");
+    if (control.referee_tx_count < 1000U)
+        ui_u32_main_large((int16_t)(x + 90), 44, control.referee_tx_count);
     else
-        ui_u32_big((int16_t)(x + 98), 47, control.referee_tx_count);
+        ui_u32_big((int16_t)(x + 90), 47, control.referee_tx_count);
 }
 
 static void ui_draw_armor(int16_t x)
