@@ -152,10 +152,15 @@ static void ui_put_glyph(char character, uint16_t columns[7])
     {
         uint8_t source_column = (uint8_t)(((uint16_t)i * 5U) / 7U);
         uint8_t row;
+        uint8_t flip_vertical = (character >= '0' && character <= '9');
 
         for (row = 0U; row < 9U; ++row)
         {
             uint8_t source_row = (uint8_t)(((uint16_t)row * 7U) / 9U);
+            if (flip_vertical != 0U)
+            {
+                source_row = (uint8_t)(6U - source_row);
+            }
             if ((source[source_column] & (uint8_t)(1U << source_row)) != 0U)
             {
                 columns[i] |= (uint16_t)(1U << row);
@@ -229,10 +234,26 @@ static int16_t ui_u32(int16_t x, int16_t y, uint32_t value)
     return (int16_t)(x + count * 8U);
 }
 
-static void ui_title(int16_t x, const char *title)
+static int16_t ui_u32_big(int16_t x, int16_t y, uint32_t value)
 {
-    ui_text_big(x, 0, title);
-    OLED_DrawHLine(x, 18, 128U);
+    char digits[11];
+    uint8_t count = 0U;
+    uint8_t i;
+
+    do
+    {
+        digits[count++] = (char)('0' + (value % 10U));
+        value /= 10U;
+    } while (value != 0U && count < sizeof(digits) - 1U);
+    for (i = 0U; i < count / 2U; ++i)
+    {
+        char swap = digits[i];
+        digits[i] = digits[count - 1U - i];
+        digits[count - 1U - i] = swap;
+    }
+    digits[count] = '\0';
+    ui_text_big(x, y, digits);
+    return (int16_t)(x + count * 16U);
 }
 
 static void ui_draw_main(int16_t x)
@@ -242,23 +263,21 @@ static void ui_draw_main(int16_t x)
 
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
-    ui_title(x, "MAIN");
-    ui_text((int16_t)(x + 2), 21, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
-    ui_u32((int16_t)(x + 82), 21, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
-    ui_text((int16_t)(x + 2), 33, "HP");
-    ui_u32((int16_t)(x + 26), 33, state.current_hp);
-    ui_text((int16_t)(x + 58), 33, "/");
-    ui_u32((int16_t)(x + 66), 33, state.maximum_hp);
-    ui_text((int16_t)(x + 2), 45, "HIT");
-    ui_u32((int16_t)(x + 34), 45, state.hit_count);
-    ui_text((int16_t)(x + 70), 45, "TX");
-    ui_u32((int16_t)(x + 94), 45, control.referee_tx_count);
+    ui_text((int16_t)(x + 2), 1, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
+    ui_u32_big((int16_t)(x + 82), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
+    ui_text((int16_t)(x + 2), 23, "HP");
+    ui_u32_big((int16_t)(x + 24), 20, state.current_hp);
+    ui_text((int16_t)(x + 61), 23, "/");
+    ui_u32_big((int16_t)(x + 70), 20, state.maximum_hp);
+    ui_text((int16_t)(x + 2), 46, "HIT");
+    ui_u32_big((int16_t)(x + 34), 43, state.hit_count);
+    ui_text((int16_t)(x + 72), 46, "TX");
+    ui_u32_big((int16_t)(x + 94), 43, control.referee_tx_count);
 }
 
 static void ui_draw_armor(int16_t x)
 {
     uint8_t port;
-    ui_title(x, "ARMOR");
     for (port = 0U; port < REFEREE_MAIN_ARMOR_COUNT; ++port)
     {
         armor_link_diagnostics_t diagnostics;
@@ -266,14 +285,16 @@ static void ui_draw_armor(int16_t x)
 
         armor_link_get_diagnostics(port, &diagnostics);
         referee_state_get_snapshot(&state);
-        int16_t y = (int16_t)(20 + port * 11U);
-        ui_text((int16_t)(x + 2), y, "P");
-        ui_u32((int16_t)(x + 10), y, port);
-        ui_text((int16_t)(x + 26), y, (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
-        ui_text((int16_t)(x + 50), y, "R");
-        ui_u32((int16_t)(x + 58), y, diagnostics.packet_count);
-        ui_text((int16_t)(x + 90), y, "H");
-        ui_u32((int16_t)(x + 98), y, diagnostics.hit_count);
+        int16_t bx = (int16_t)((port & 1U) * 64U);
+        int16_t by = (int16_t)((port >> 1U) * 32U);
+        ui_text_big((int16_t)(x + bx + 2), by, "P");
+        ui_u32_big((int16_t)(x + bx + 12), by, port);
+        ui_text((int16_t)(x + bx + 28), (int16_t)(by + 4),
+                (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
+        ui_text((int16_t)(x + bx + 2), (int16_t)(by + 19), "R");
+        ui_u32((int16_t)(x + bx + 10), (int16_t)(by + 16), diagnostics.packet_count);
+        ui_text((int16_t)(x + bx + 38), (int16_t)(by + 19), "H");
+        ui_u32((int16_t)(x + bx + 46), (int16_t)(by + 16), diagnostics.hit_count);
     }
 }
 
@@ -281,19 +302,18 @@ static void ui_draw_protocol(int16_t x)
 {
     referee_control_diagnostics_t control;
     referee_control_get_diagnostics(&control);
-    ui_title(x, "PROTOCOL");
-    ui_text((int16_t)(x + 2), 20, "TX");
-    ui_u32((int16_t)(x + 26), 20, control.referee_tx_count);
-    ui_text((int16_t)(x + 70), 20, "E");
-    ui_u32((int16_t)(x + 78), 20, control.referee_tx_error_count);
-    ui_text((int16_t)(x + 2), 31, "CFG");
-    ui_u32((int16_t)(x + 34), 31, control.armor_config_tx_count);
-    ui_text((int16_t)(x + 70), 31, "E");
-    ui_u32((int16_t)(x + 78), 31, control.armor_config_tx_error_count);
-    ui_text((int16_t)(x + 2), 42, "CMD");
-    ui_u32((int16_t)(x + 34), 42, control.last_command_id);
-    ui_text((int16_t)(x + 2), 53, "OUT");
-    ui_text((int16_t)(x + 34), 53, control.referee_tx_error_count == 0U ? "OK" : "ERR");
+    ui_text((int16_t)(x + 2), 2, "TX");
+    ui_u32_big((int16_t)(x + 26), 0, control.referee_tx_count);
+    ui_text((int16_t)(x + 70), 2, "E");
+    ui_u32_big((int16_t)(x + 78), 0, control.referee_tx_error_count);
+    ui_text((int16_t)(x + 2), 18, "CFG");
+    ui_u32_big((int16_t)(x + 34), 16, control.armor_config_tx_count);
+    ui_text((int16_t)(x + 70), 18, "E");
+    ui_u32_big((int16_t)(x + 78), 16, control.armor_config_tx_error_count);
+    ui_text((int16_t)(x + 2), 34, "CMD");
+    ui_u32_big((int16_t)(x + 34), 32, control.last_command_id);
+    ui_text((int16_t)(x + 2), 50, "OUT");
+    ui_text_big((int16_t)(x + 34), 46, control.referee_tx_error_count == 0U ? "OK" : "ERR");
 }
 
 static void ui_draw_debug(int16_t x)
@@ -313,15 +333,14 @@ static void ui_draw_debug(int16_t x)
     }
     referee_control_get_diagnostics(&control);
     referee_state_get_snapshot(&state);
-    ui_title(x, "DEBUG");
-    ui_text((int16_t)(x + 2), 20, "CRC");
-    ui_u32((int16_t)(x + 34), 20, crc);
-    ui_text((int16_t)(x + 70), 20, "DUP");
-    ui_u32((int16_t)(x + 102), 20, duplicate);
-    ui_text((int16_t)(x + 2), 32, "DROP");
-    ui_u32((int16_t)(x + 42), 32, control.armor_event_drop_count);
-    ui_text((int16_t)(x + 2), 44, "LAST P");
-    ui_u32((int16_t)(x + 58), 44, state.last_hit_armor_id);
+    ui_text((int16_t)(x + 2), 2, "CRC");
+    ui_u32((int16_t)(x + 34), 0, crc);
+    ui_text((int16_t)(x + 70), 2, "DUP");
+    ui_u32_big((int16_t)(x + 102), 0, duplicate);
+    ui_text((int16_t)(x + 2), 20, "DROP");
+    ui_u32_big((int16_t)(x + 42), 16, control.armor_event_drop_count);
+    ui_text((int16_t)(x + 2), 38, "LAST P");
+    ui_u32_big((int16_t)(x + 58), 34, state.last_hit_armor_id);
 }
 
 /* Application-owned icon strip.  The shapes deliberately stay simple and
@@ -373,8 +392,6 @@ static void ui_draw_home(int16_t x)
 {
     static const char *const labels[] = {"MAIN", "ARMOR", "PROTO", "DEBUG"};
     uint8_t i;
-    ui_text_big((int16_t)(x + 2), 0, "HOME");
-    OLED_DrawHLine(x, 18, 128U);
     for (i = 0U; i < 4U; ++i)
     {
         int16_t delta = (int16_t)i - (int16_t)ui_home_selected;
@@ -383,17 +400,17 @@ static void ui_draw_home(int16_t x)
         if (delta >= -1 && delta <= 1)
         {
             int16_t icon_x = (int16_t)(48 + delta * 44);
-            ui_draw_icon(i, (int16_t)(x + icon_x), 20,
+            ui_draw_icon(i, (int16_t)(x + icon_x), 2,
                          i == ui_home_selected ? 1U : 0U);
         }
     }
-    OLED_DrawRBox((int16_t)(x + 27), 48, 74U, 16U, 3U);
+    OLED_DrawRBox((int16_t)(x + 8), 42, 112U, 22U, 4U);
     OLED_SetDrawMode(OLED_DRAW_CLEAR);
-    ui_text((int16_t)(x + 64 - (int16_t)(strlen(labels[ui_home_selected]) * 4U)),
-            51, labels[ui_home_selected]);
+    ui_text_big((int16_t)(x + 64 - (int16_t)(strlen(labels[ui_home_selected]) * 8U)),
+                44, labels[ui_home_selected]);
     OLED_SetDrawMode(OLED_DRAW_SET);
-    ui_text((int16_t)(x + 2), 51, "<");
-    ui_text((int16_t)(x + 120), 51, ">");
+    ui_text_big((int16_t)(x + 1), 44, "<");
+    ui_text_big((int16_t)(x + 113), 44, ">");
 }
 
 void KK_UI_CustomOnEnter(KK_UI_PageId page)
