@@ -449,34 +449,49 @@ static void ui_draw_settings(int16_t x)
 
     for (i = 0U; i < 2U; ++i)
     {
-        int16_t y = (int16_t)(4 + i * 24U);
+        int16_t y = (int16_t)(1 + i * 32U);
         if (i == ui_settings_selected)
         {
-            OLED_DrawRFrame((int16_t)(x + 1), (int16_t)(y - 2),
-                            126U, 20U, 3U);
+            /* Fill the selected row, then draw its text in clear mode.  The
+             * 31-pixel rows leave a full blank line between the two large
+             * glyphs, so neither the frame nor the descenders touch the next
+             * item. */
+            OLED_DrawRBox((int16_t)(x + 2), y, 124U, 29U, 3U);
+            OLED_SetDrawMode(OLED_DRAW_CLEAR);
+            OLED_DrawRFrame((int16_t)(x + 2), y, 124U, 29U, 3U);
         }
-        ui_text_bold((int16_t)(x + 8), y, items[i]);
-        ui_text((int16_t)(x + 112), (int16_t)(y + 4), ">");
+        else
+        {
+            OLED_SetDrawMode(OLED_DRAW_SET);
+        }
+        ui_text_main_large((int16_t)(x + 10), (int16_t)(y + 7), items[i]);
+        ui_text_main_large((int16_t)(x + 106), (int16_t)(y + 7), ">");
+        OLED_SetDrawMode(OLED_DRAW_SET);
     }
 }
 
 static void ui_draw_confirm(int16_t x)
 {
-    const char *title = ui_confirm_action == 1U ? "SWITCH TEAM?" : "RESET SYSTEM?";
+    const char *title_line1 = ui_confirm_action == 1U ? "SWITCH" : "RESET";
+    const char *title_line2 = ui_confirm_action == 1U ? "TEAM?" : "SYSTEM?";
 
-    OLED_DrawRBox((int16_t)(x + 3), 8, 122U, 48U, 4U);
+    OLED_SetDrawMode(OLED_DRAW_SET);
+    OLED_DrawRBox((int16_t)(x + 2), 2, 124U, 60U, 4U);
     OLED_SetDrawMode(OLED_DRAW_CLEAR);
-    ui_text_bold((int16_t)(x + 10), 13, title);
-    ui_text_bold((int16_t)(x + 14), 39, "CANCEL");
-    ui_text_bold((int16_t)(x + 86), 39, "OK");
+    ui_text_main_large((int16_t)(x + 64 - (int16_t)(strlen(title_line1) * 6U)),
+                       6, title_line1);
+    ui_text_main_large((int16_t)(x + 64 - (int16_t)(strlen(title_line2) * 6U)),
+                       21, title_line2);
+    ui_text_main_large((int16_t)(x + 12), 44, "CANCEL");
+    ui_text_main_large((int16_t)(x + 95), 44, "OK");
     OLED_SetDrawMode(OLED_DRAW_SET);
     if (ui_confirm_focus == 0U)
     {
-        OLED_DrawRFrame((int16_t)(x + 9), 35, 58U, 17U, 3U);
+        OLED_DrawRFrame((int16_t)(x + 7), 40, 82U, 22U, 3U);
     }
     else
     {
-        OLED_DrawRFrame((int16_t)(x + 81), 35, 36U, 17U, 3U);
+        OLED_DrawRFrame((int16_t)(x + 90), 40, 32U, 22U, 3U);
     }
 }
 
@@ -486,10 +501,11 @@ static void ui_draw_toast(int16_t x)
     {
         return;
     }
-    OLED_DrawRBox((int16_t)(x + 15), 48, 98U, 16U, 3U);
+    OLED_SetDrawMode(OLED_DRAW_SET);
+    OLED_DrawRBox((int16_t)(x + 8), 17, 112U, 30U, 4U);
     OLED_SetDrawMode(OLED_DRAW_CLEAR);
-    ui_text_bold((int16_t)(x + 64 - (int16_t)(strlen(ui_toast_text) * 4U)),
-                 52, ui_toast_text);
+    ui_text_main_large((int16_t)(x + 64 - (int16_t)(strlen(ui_toast_text) * 6U)),
+                       25, ui_toast_text);
     OLED_SetDrawMode(OLED_DRAW_SET);
 }
 
@@ -611,7 +627,7 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
                 {
                     referee_state_toggle_team();
                     referee_control_refresh_led();
-                    ui_toast_text = "TEAM CHANGED";
+                    ui_toast_text = "TEAM OK";
                 }
                 else
                 {
