@@ -458,7 +458,10 @@ static void ui_draw_settings(int16_t x)
              * item. */
             OLED_DrawRBox((int16_t)(x + 2), y, 124U, 29U, 3U);
             OLED_SetDrawMode(OLED_DRAW_CLEAR);
-            OLED_DrawRFrame((int16_t)(x + 2), y, 124U, 29U, 3U);
+            /* Keep the selection border away from the rounded outer edge.
+             * A plain inset frame is intentionally used here: it remains a
+             * crisp black line on panels whose rounded-corner pixels bloom. */
+            OLED_DrawFrame((int16_t)(x + 4), (int16_t)(y + 2), 120U, 25U);
         }
         else
         {
@@ -831,7 +834,24 @@ static void ui_thread_entry(ULONG argument)
         {
             if (ui_button_press(&ui_key4, key4, now) != 0U)
             {
-                ui_display_stop();
+                /* K4 is the global UI-exit key only on the icon home.  Once
+                 * inside an application page it behaves as a back key; in a
+                 * confirmation dialog it first cancels that dialog. */
+                if (ui_confirm_action != 0U)
+                {
+                    ui_confirm_action = 0U;
+                    ui_confirm_focus = 0U;
+                    KK_UI_Invalidate();
+                }
+                else if (ui_page != 0U)
+                {
+                    ui_page = 0U;
+                    KK_UI_Invalidate();
+                }
+                else
+                {
+                    ui_display_stop();
+                }
             }
             else
             {
