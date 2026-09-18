@@ -299,13 +299,13 @@ static void ui_draw_main(int16_t x)
     ui_u32_fit((int16_t)(x + 78), 0,
                state.team == REFEREE_MAIN_TEAM_BLUE ?
                REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED, 127);
-    ui_text((int16_t)(x + 2), 16, "HP");
-    ui_u32_fit((int16_t)(x + 24), 12, state.current_hp, 127);
-    OLED_DrawHLine((int16_t)(x + 56), 20, 7U);
-    ui_u32_fit((int16_t)(x + 66), 12, state.maximum_hp, 127);
-    ui_text((int16_t)(x + 2), 42, "HIT");
+    ui_text((int16_t)(x + 2), 24, "HP");
+    ui_u32_big((int16_t)(x + 24), 21, state.current_hp);
+    OLED_DrawLine((int16_t)(x + 55), 28, (int16_t)(x + 61), 21);
+    ui_u32_big((int16_t)(x + 66), 21, state.maximum_hp);
+    ui_text((int16_t)(x + 2), 39, "HIT");
     ui_u32_fit((int16_t)(x + 34), 38, state.hit_count, 63);
-    ui_text((int16_t)(x + 64), 42, "TX");
+    ui_text((int16_t)(x + 64), 39, "TX");
     ui_u32_fit((int16_t)(x + 80), 38, control.referee_tx_count, 127);
 }
 
