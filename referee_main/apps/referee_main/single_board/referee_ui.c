@@ -1,5 +1,6 @@
 #include "referee_ui.h"
 
+#include <string.h>
 #include <stdint.h>
 
 #include "armor_link.h"
@@ -32,7 +33,9 @@ static ui_button_t ui_key3;
 static ui_button_t ui_key4;
 static uint8_t ui_active;
 static uint8_t ui_display_ready;
+/* 0 = icon home, 1..4 = the four detail pages. */
 static uint8_t ui_page;
+static uint8_t ui_home_selected;
 
 /* KK_UI validates that font pointers are present even for a custom-only app.
  * The custom page below uses the local 5x7 renderer, so this non-null marker is
@@ -161,7 +164,8 @@ static void ui_put_glyph(char character, uint16_t columns[7])
     }
 }
 
-static void ui_text(int16_t x, int16_t y, const char *text)
+static void ui_text_scaled(int16_t x, int16_t y, const char *text,
+                           uint8_t scale)
 {
     while (text != 0 && *text != '\0')
     {
@@ -176,12 +180,31 @@ static void ui_text(int16_t x, int16_t y, const char *text)
             {
                 if ((glyph[column] & (uint8_t)(1U << row)) != 0U)
                 {
-                    OLED_DrawPixel(x + column, y + row);
+                    uint8_t dx;
+                    uint8_t dy;
+                    for (dx = 0U; dx < scale; ++dx)
+                    {
+                        for (dy = 0U; dy < scale; ++dy)
+                        {
+                            OLED_DrawPixel((int16_t)(x + column * scale + dx),
+                                           (int16_t)(y + row * scale + dy));
+                        }
+                    }
                 }
             }
         }
-        x = (int16_t)(x + 8);
+        x = (int16_t)(x + 8 * scale);
     }
+}
+
+static void ui_text(int16_t x, int16_t y, const char *text)
+{
+    ui_text_scaled(x, y, text, 1U);
+}
+
+static void ui_text_big(int16_t x, int16_t y, const char *text)
+{
+    ui_text_scaled(x, y, text, 2U);
 }
 
 static int16_t ui_u32(int16_t x, int16_t y, uint32_t value)
@@ -208,16 +231,8 @@ static int16_t ui_u32(int16_t x, int16_t y, uint32_t value)
 
 static void ui_title(int16_t x, const char *title)
 {
-    ui_text(x, 0, title);
-    OLED_DrawHLine(x, 10, 128U);
-}
-
-static void ui_footer(int16_t x)
-{
-    ui_text((int16_t)(x + 104), 55, "<>");
-    ui_text((int16_t)(x + 8), 55, "P");
-    ui_u32((int16_t)(x + 16), 55, (uint32_t)ui_page + 1U);
-    ui_text((int16_t)(x + 32), 55, "/4");
+    ui_text_big(x, 0, title);
+    OLED_DrawHLine(x, 18, 128U);
 }
 
 static void ui_draw_main(int16_t x)
@@ -228,17 +243,16 @@ static void ui_draw_main(int16_t x)
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
     ui_title(x, "MAIN");
-    ui_text((int16_t)(x + 2), 13, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
-    ui_u32((int16_t)(x + 82), 13, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
-    ui_text((int16_t)(x + 2), 25, "HP");
-    ui_u32((int16_t)(x + 26), 25, state.current_hp);
-    ui_text((int16_t)(x + 58), 25, "/");
-    ui_u32((int16_t)(x + 66), 25, state.maximum_hp);
-    ui_text((int16_t)(x + 2), 37, "HIT");
-    ui_u32((int16_t)(x + 34), 37, state.hit_count);
-    ui_text((int16_t)(x + 70), 37, "TX");
-    ui_u32((int16_t)(x + 94), 37, control.referee_tx_count);
-    ui_footer(x);
+    ui_text((int16_t)(x + 2), 21, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
+    ui_u32((int16_t)(x + 82), 21, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
+    ui_text((int16_t)(x + 2), 33, "HP");
+    ui_u32((int16_t)(x + 26), 33, state.current_hp);
+    ui_text((int16_t)(x + 58), 33, "/");
+    ui_u32((int16_t)(x + 66), 33, state.maximum_hp);
+    ui_text((int16_t)(x + 2), 45, "HIT");
+    ui_u32((int16_t)(x + 34), 45, state.hit_count);
+    ui_text((int16_t)(x + 70), 45, "TX");
+    ui_u32((int16_t)(x + 94), 45, control.referee_tx_count);
 }
 
 static void ui_draw_armor(int16_t x)
@@ -252,7 +266,7 @@ static void ui_draw_armor(int16_t x)
 
         armor_link_get_diagnostics(port, &diagnostics);
         referee_state_get_snapshot(&state);
-        int16_t y = (int16_t)(13 + port * 10U);
+        int16_t y = (int16_t)(20 + port * 11U);
         ui_text((int16_t)(x + 2), y, "P");
         ui_u32((int16_t)(x + 10), y, port);
         ui_text((int16_t)(x + 26), y, (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
@@ -261,7 +275,6 @@ static void ui_draw_armor(int16_t x)
         ui_text((int16_t)(x + 90), y, "H");
         ui_u32((int16_t)(x + 98), y, diagnostics.hit_count);
     }
-    ui_footer(x);
 }
 
 static void ui_draw_protocol(int16_t x)
@@ -269,19 +282,18 @@ static void ui_draw_protocol(int16_t x)
     referee_control_diagnostics_t control;
     referee_control_get_diagnostics(&control);
     ui_title(x, "PROTOCOL");
-    ui_text((int16_t)(x + 2), 13, "TX");
-    ui_u32((int16_t)(x + 26), 13, control.referee_tx_count);
-    ui_text((int16_t)(x + 70), 13, "E");
-    ui_u32((int16_t)(x + 78), 13, control.referee_tx_error_count);
-    ui_text((int16_t)(x + 2), 25, "CFG");
-    ui_u32((int16_t)(x + 34), 25, control.armor_config_tx_count);
-    ui_text((int16_t)(x + 70), 25, "E");
-    ui_u32((int16_t)(x + 78), 25, control.armor_config_tx_error_count);
-    ui_text((int16_t)(x + 2), 37, "CMD");
-    ui_u32((int16_t)(x + 34), 37, control.last_command_id);
-    ui_text((int16_t)(x + 2), 43, "OUT");
-    ui_text((int16_t)(x + 34), 43, control.referee_tx_error_count == 0U ? "OK" : "ERR");
-    ui_footer(x);
+    ui_text((int16_t)(x + 2), 20, "TX");
+    ui_u32((int16_t)(x + 26), 20, control.referee_tx_count);
+    ui_text((int16_t)(x + 70), 20, "E");
+    ui_u32((int16_t)(x + 78), 20, control.referee_tx_error_count);
+    ui_text((int16_t)(x + 2), 31, "CFG");
+    ui_u32((int16_t)(x + 34), 31, control.armor_config_tx_count);
+    ui_text((int16_t)(x + 70), 31, "E");
+    ui_u32((int16_t)(x + 78), 31, control.armor_config_tx_error_count);
+    ui_text((int16_t)(x + 2), 42, "CMD");
+    ui_u32((int16_t)(x + 34), 42, control.last_command_id);
+    ui_text((int16_t)(x + 2), 53, "OUT");
+    ui_text((int16_t)(x + 34), 53, control.referee_tx_error_count == 0U ? "OK" : "ERR");
 }
 
 static void ui_draw_debug(int16_t x)
@@ -302,15 +314,86 @@ static void ui_draw_debug(int16_t x)
     referee_control_get_diagnostics(&control);
     referee_state_get_snapshot(&state);
     ui_title(x, "DEBUG");
-    ui_text((int16_t)(x + 2), 13, "CRC");
-    ui_u32((int16_t)(x + 34), 13, crc);
-    ui_text((int16_t)(x + 70), 13, "DUP");
-    ui_u32((int16_t)(x + 102), 13, duplicate);
-    ui_text((int16_t)(x + 2), 25, "DROP");
-    ui_u32((int16_t)(x + 42), 25, control.armor_event_drop_count);
-    ui_text((int16_t)(x + 2), 37, "LAST P");
-    ui_u32((int16_t)(x + 58), 37, state.last_hit_armor_id);
-    ui_footer(x);
+    ui_text((int16_t)(x + 2), 20, "CRC");
+    ui_u32((int16_t)(x + 34), 20, crc);
+    ui_text((int16_t)(x + 70), 20, "DUP");
+    ui_u32((int16_t)(x + 102), 20, duplicate);
+    ui_text((int16_t)(x + 2), 32, "DROP");
+    ui_u32((int16_t)(x + 42), 32, control.armor_event_drop_count);
+    ui_text((int16_t)(x + 2), 44, "LAST P");
+    ui_u32((int16_t)(x + 58), 44, state.last_hit_armor_id);
+}
+
+/* Application-owned icon strip.  The shapes deliberately stay simple and
+ * monochrome so they remain legible on a 128x64 SSD1306 panel. */
+static void ui_draw_icon(uint8_t kind, int16_t x, int16_t y, uint8_t selected)
+{
+    if (selected != 0U)
+    {
+        OLED_DrawRFrame(x - 2, y - 2, 32U, 30U, 3U);
+    }
+    switch (kind)
+    {
+    case 0U: /* robot / main state */
+        OLED_DrawFrame(x + 7, y + 7, 14U, 13U);
+        OLED_DrawBox(x + 10, y + 2, 8U, 5U);
+        OLED_DrawVLine(x + 14, y, 2U);
+        OLED_DrawPixel(x + 11, y + 12);
+        OLED_DrawPixel(x + 17, y + 12);
+        OLED_DrawHLine(x + 10, y + 17, 8U);
+        OLED_DrawVLine(x + 9, y + 20, 5U);
+        OLED_DrawVLine(x + 19, y + 20, 5U);
+        break;
+    case 1U: /* armor / shield */
+        OLED_DrawLine(x + 14, y + 2, x + 24, y + 7);
+        OLED_DrawLine(x + 24, y + 7, x + 21, y + 20);
+        OLED_DrawLine(x + 21, y + 20, x + 14, y + 25);
+        OLED_DrawLine(x + 14, y + 25, x + 7, y + 20);
+        OLED_DrawLine(x + 7, y + 20, x + 4, y + 7);
+        OLED_DrawLine(x + 4, y + 7, x + 14, y + 2);
+        OLED_DrawHLine(x + 9, y + 13, 10U);
+        break;
+    case 2U: /* serial / protocol */
+        OLED_DrawCircle(x + 9, y + 13, 5U);
+        OLED_DrawCircle(x + 19, y + 13, 5U);
+        OLED_DrawHLine(x + 12, y + 13, 4U);
+        OLED_DrawLine(x + 3, y + 5, x + 9, y + 1);
+        OLED_DrawLine(x + 25, y + 21, x + 19, y + 25);
+        break;
+    default: /* diagnostics */
+        OLED_DrawFrame(x + 4, y + 4, 21U, 21U);
+        OLED_DrawVLine(x + 9, y + 18, 3U);
+        OLED_DrawVLine(x + 14, y + 13, 8U);
+        OLED_DrawVLine(x + 19, y + 8, 13U);
+        break;
+    }
+}
+
+static void ui_draw_home(int16_t x)
+{
+    static const char *const labels[] = {"MAIN", "ARMOR", "PROTO", "DEBUG"};
+    uint8_t i;
+    ui_text_big((int16_t)(x + 2), 0, "HOME");
+    OLED_DrawHLine(x, 18, 128U);
+    for (i = 0U; i < 4U; ++i)
+    {
+        int16_t delta = (int16_t)i - (int16_t)ui_home_selected;
+        if (delta > 2) delta = -1;
+        if (delta < -2) delta = 1;
+        if (delta >= -1 && delta <= 1)
+        {
+            int16_t icon_x = (int16_t)(48 + delta * 44);
+            ui_draw_icon(i, (int16_t)(x + icon_x), 20,
+                         i == ui_home_selected ? 1U : 0U);
+        }
+    }
+    OLED_DrawRBox((int16_t)(x + 27), 48, 74U, 16U, 3U);
+    OLED_SetDrawMode(OLED_DRAW_CLEAR);
+    ui_text((int16_t)(x + 64 - (int16_t)(strlen(labels[ui_home_selected]) * 4U)),
+            51, labels[ui_home_selected]);
+    OLED_SetDrawMode(OLED_DRAW_SET);
+    ui_text((int16_t)(x + 2), 51, "<");
+    ui_text((int16_t)(x + 120), 51, ">");
 }
 
 void KK_UI_CustomOnEnter(KK_UI_PageId page)
@@ -327,14 +410,24 @@ void KK_UI_CustomOnLeave(KK_UI_PageId page)
 void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
 {
     (void)page;
-    if (event.action == KK_UI_INPUT_UP)
+    if (ui_page == 0U && event.action == KK_UI_INPUT_UP)
     {
-        ui_page = (uint8_t)((ui_page + 3U) % 4U);
+        ui_home_selected = (uint8_t)((ui_home_selected + 3U) % 4U);
         KK_UI_Invalidate();
     }
-    else if (event.action == KK_UI_INPUT_DOWN)
+    else if (ui_page == 0U && event.action == KK_UI_INPUT_DOWN)
     {
-        ui_page = (uint8_t)((ui_page + 1U) % 4U);
+        ui_home_selected = (uint8_t)((ui_home_selected + 1U) % 4U);
+        KK_UI_Invalidate();
+    }
+    else if (ui_page == 0U && event.action == KK_UI_INPUT_OK)
+    {
+        ui_page = (uint8_t)(ui_home_selected + 1U);
+        KK_UI_Invalidate();
+    }
+    else if (ui_page != 0U && event.action == KK_UI_INPUT_OK)
+    {
+        ui_page = 0U;
         KK_UI_Invalidate();
     }
 }
@@ -358,9 +451,10 @@ void KK_UI_CustomOnDraw(KK_UI_PageId page, int16_t x_offset,
     OLED_SetClipWindow(clip_x, 0, clip_width, 64U);
     switch (ui_page)
     {
-    case 0U: ui_draw_main(x_offset); break;
-    case 1U: ui_draw_armor(x_offset); break;
-    case 2U: ui_draw_protocol(x_offset); break;
+    case 0U: ui_draw_home(x_offset); break;
+    case 1U: ui_draw_main(x_offset); break;
+    case 2U: ui_draw_armor(x_offset); break;
+    case 3U: ui_draw_protocol(x_offset); break;
     default: ui_draw_debug(x_offset); break;
     }
     OLED_ResetClipWindow();
@@ -389,6 +483,8 @@ static UINT ui_display_start(void)
     }
     (void)OLED_SetPowerSave(false);
     ui_active = 1U;
+    ui_page = 0U;
+    ui_home_selected = 0U;
     KK_UI_Invalidate();
     return TX_SUCCESS;
 }
