@@ -484,16 +484,18 @@ static void ui_draw_confirm(int16_t x)
     ui_text_main_large((int16_t)(x + 12), 44, "CANCEL");
     ui_text_main_large((int16_t)(x + 95), 44, "OK");
     /* The dialog body is white, so the active button must be outlined in
-     * clear mode (black). Use one pixel for the line and leave a generous
-     * margin around the enlarged glyphs so the outline never touches them. */
+     * clear mode (black). Use two equal-width pixels on every edge and keep
+     * the larger frame far enough from the enlarged glyphs. */
     OLED_SetDrawMode(OLED_DRAW_CLEAR);
     if (ui_confirm_focus == 0U)
     {
         OLED_DrawFrame((int16_t)(x + 8), 40, 80U, 22U);
+        OLED_DrawFrame((int16_t)(x + 9), 41, 78U, 20U);
     }
     else
     {
         OLED_DrawFrame((int16_t)(x + 91), 40, 32U, 22U);
+        OLED_DrawFrame((int16_t)(x + 92), 41, 30U, 20U);
     }
     OLED_SetDrawMode(OLED_DRAW_SET);
 }
