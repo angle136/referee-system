@@ -214,6 +214,11 @@ static void ui_text_bold(int16_t x, int16_t y, const char *text)
     ui_text((int16_t)(x + 1), y, text);
 }
 
+static void ui_text_big(int16_t x, int16_t y, const char *text)
+{
+    ui_text_scaled(x, y, text, 2U);
+}
+
 static void ui_text_large(int16_t x, int16_t y, const char *text)
 {
     ui_text_scaled(x, y, text, 2U);
@@ -289,24 +294,19 @@ static void ui_draw_main(int16_t x)
 
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
-    ui_text_bold((int16_t)(x + 2), 0,
-                 state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B" : "TEAM R");
-    ui_text_bold((int16_t)(x + 58), 4, "ID");
+    ui_text((int16_t)(x + 2), 0,
+            state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
     ui_u32_fit((int16_t)(x + 78), 0,
                state.team == REFEREE_MAIN_TEAM_BLUE ?
                REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED, 127);
-
-    ui_text_bold((int16_t)(x + 2), 18, "HP");
-    ui_u32_big((int16_t)(x + 24), 16, state.current_hp);
-    /* Draw the separator explicitly; it is not a font glyph and cannot be
-     * lost when the numeric columns are redrawn. */
-    OLED_DrawLine((int16_t)(x + 59), 16, (int16_t)(x + 55), 24);
-    ui_u32_big((int16_t)(x + 66), 16, state.maximum_hp);
-
-    ui_text_bold((int16_t)(x + 2), 39, "HIT");
-    ui_u32_fit((int16_t)(x + 34), 37, state.hit_count, 62);
-    ui_text_bold((int16_t)(x + 65), 39, "TX");
-    ui_u32_fit((int16_t)(x + 82), 37, control.referee_tx_count, 127);
+    ui_text((int16_t)(x + 2), 16, "HP");
+    ui_u32_fit((int16_t)(x + 24), 12, state.current_hp, 127);
+    OLED_DrawHLine((int16_t)(x + 56), 20, 7U);
+    ui_u32_fit((int16_t)(x + 66), 12, state.maximum_hp, 127);
+    ui_text((int16_t)(x + 2), 42, "HIT");
+    ui_u32_fit((int16_t)(x + 34), 38, state.hit_count, 63);
+    ui_text((int16_t)(x + 64), 42, "TX");
+    ui_u32_fit((int16_t)(x + 80), 38, control.referee_tx_count, 127);
 }
 
 static void ui_draw_armor(int16_t x)
@@ -440,15 +440,13 @@ static void ui_draw_home(int16_t x)
                          i == ui_home_selected ? 1U : 0U);
         }
     }
-    /* Leave a clear gap below the icon frames; the previous 42..63 capsule
-     * visually climbed into the selected icon on the physical panel. */
-    OLED_DrawRBox((int16_t)(x + 12), 47, 104U, 17U, 3U);
+    OLED_DrawRBox((int16_t)(x + 8), 42, 112U, 22U, 4U);
     OLED_SetDrawMode(OLED_DRAW_CLEAR);
-    ui_text_bold((int16_t)(x + 64 - (int16_t)(strlen(labels[ui_home_selected]) * 4U)),
-                 51, labels[ui_home_selected]);
+    ui_text_big((int16_t)(x + 64 - (int16_t)(strlen(labels[ui_home_selected]) * 8U)),
+                44, labels[ui_home_selected]);
     OLED_SetDrawMode(OLED_DRAW_SET);
-    ui_text_bold((int16_t)(x + 2), 51, "<");
-    ui_text_bold((int16_t)(x + 118), 51, ">");
+    ui_text_big((int16_t)(x + 1), 44, "<");
+    ui_text_big((int16_t)(x + 113), 44, ">");
 }
 
 void KK_UI_CustomOnEnter(KK_UI_PageId page)
