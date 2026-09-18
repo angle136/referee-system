@@ -1,6 +1,65 @@
 {
     "version": "0.2.0",
     "configurations": [
+        {
+            "name": "Referee_Main_105_RC_JLink",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/105_rc.elf",
+            "request": "launch",
+            "type": "cortex-debug",
+            "device": "STM32F105RC",
+            "servertype": "jlink",
+            "interface": "swd",
+            "runToEntryPoint": "main",
+            "preLaunchTask": "Build f105_rc",
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": 4
+            },
+            "showDevDebugOutput": "raw",
+            "rttConfig": {
+                "enabled": true,
+                "address": "auto",
+                "decoders": [
+                    {
+                        "label": "",
+                        "port": 0,
+                        "type": "console"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "Referee_Main_105_RC_STlink",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/105_rc.elf",
+            "request": "launch",
+            "type": "cortex-debug",
+            "device": "STM32F105RC",
+            "servertype": "openocd",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            "runToEntryPoint": "main",
+            "preLaunchTask": "Build f105_rc",
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": 4
+            },
+            "showDevDebugOutput": "raw",
+            "rttConfig": {
+                "enabled": true,
+                "address": "auto",
+                "decoders": [
+                    {
+                        "label": "",
+                        "port": 0,
+                        "type": "console"
+                    }
+                ]
+            }
+        },
         //dap-link
         {
             "name": "DJI_C_Daplink",

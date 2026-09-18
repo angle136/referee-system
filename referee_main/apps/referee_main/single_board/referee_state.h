@@ -7,6 +7,7 @@ typedef struct
 {
     uint16_t current_hp;
     uint16_t maximum_hp;
+    uint8_t  team;
     uint8_t  online_mask;
     uint8_t  last_hit_armor_id;
     uint8_t  last_hit_dx;
@@ -15,6 +16,8 @@ typedef struct
 } referee_state_snapshot_t;
 
 int referee_state_init(void);
+void referee_state_toggle_team(void);
+void referee_state_reset(void);
 void referee_state_mark_armor_seen(uint8_t armor_id, uint16_t ax_raw, uint8_t dx);
 void referee_state_apply_hit(uint8_t armor_id, uint16_t ax_raw, uint8_t dx);
 void referee_state_get_snapshot(referee_state_snapshot_t *snapshot);

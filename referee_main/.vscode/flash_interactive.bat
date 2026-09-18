@@ -18,11 +18,25 @@ if "%PROBE%"=="" exit /b 1
 if /I "%BOARD%"=="damiao_h7" (
     set "TARGET=stm32h7x"
     set "JLINK_DEV=STM32H743BI"
+    set "BUILD_BOARD=damiao_h7"
     goto :board_ok
 )
 if /I "%BOARD%"=="dji_c" (
     set "TARGET=stm32f4x"
     set "JLINK_DEV=STM32F407IG"
+    set "BUILD_BOARD=dji_c"
+    goto :board_ok
+)
+if /I "%BOARD%"=="f103_c8" (
+    set "TARGET=stm32f1x"
+    set "JLINK_DEV=STM32F103C8"
+    set "BUILD_BOARD=f103_c8"
+    goto :board_ok
+)
+if /I "%BOARD%"=="f105_rc" (
+    set "TARGET=stm32f1x"
+    set "JLINK_DEV=STM32F105RC"
+    set "BUILD_BOARD=105_rc"
     goto :board_ok
 )
 exit /b 1
@@ -30,7 +44,7 @@ exit /b 1
 :board_ok
 
 :: ELF path
-set "ELF_PATH=%WORKSPACE_ROOT%\build\%BOARD%\%BUILD_TYPE%\base.elf"
+set "ELF_PATH=%WORKSPACE_ROOT%\build\%BUILD_BOARD%\%BUILD_TYPE%\base.elf"
 
 if not exist "%ELF_PATH%" (
     echo [ERROR] ELF file not found: %ELF_PATH%
@@ -47,7 +61,7 @@ if /I "%PROBE%"=="jlink" goto :flash_jlink
 if /I "%PROBE%"=="stlink"  set "IFACE=interface/stlink.cfg"
 if /I "%PROBE%"=="daplink" set "IFACE=interface/cmsis-dap.cfg"
 
-openocd -f %IFACE% -f target/%TARGET%.cfg -c "program build/%BOARD%/%BUILD_TYPE%/base.elf verify reset exit"
+openocd -f %IFACE% -f target/%TARGET%.cfg -c "program build/%BUILD_BOARD%/%BUILD_TYPE%/base.elf verify reset exit"
 
 if errorlevel 1 (
     echo [ERROR] OpenOCD flash failed

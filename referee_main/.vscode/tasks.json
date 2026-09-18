@@ -11,7 +11,7 @@
                 "f103_c8",
                 "f105_rc"
             ],
-            "default": "dji_c"
+            "default": "f105_rc"
         },
         {
             "id": "selectProbe",
@@ -34,8 +34,7 @@
             },
             "problemMatcher": [],
             "group": {
-                "kind": "build",
-                "isDefault": true
+                "kind": "build"
             },
             "presentation": {
                 "reveal": "always",
@@ -66,6 +65,9 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
+            "group": {
+                "kind": "build"
+            },
             "presentation": {
                 "reveal": "always",
                 "panel": "shared",
@@ -95,6 +97,9 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
+            "group": {
+                "kind": "build"
+            },
             "presentation": {
                 "reveal": "always",
                 "panel": "shared",
@@ -124,6 +129,9 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
+            "group": {
+                "kind": "build"
+            },
             "presentation": {
                 "reveal": "always",
                 "panel": "shared",

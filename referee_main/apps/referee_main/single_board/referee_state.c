@@ -7,6 +7,7 @@ typedef struct
 {
     uint16_t current_hp;
     uint16_t maximum_hp;
+    uint8_t  team;
     ULONG    last_seen_tick[REFEREE_MAIN_ARMOR_COUNT];
     uint8_t  seen_mask;
     uint8_t  last_hit_armor_id;
@@ -28,6 +29,7 @@ int referee_state_init(void)
 
     referee_state.current_hp = REFEREE_MAIN_MAX_HP;
     referee_state.maximum_hp = REFEREE_MAIN_MAX_HP;
+    referee_state.team = REFEREE_MAIN_INITIAL_TEAM;
     referee_state.seen_mask = 0;
     referee_state.last_hit_armor_id = 0;
     referee_state.last_hit_dx = 0;
@@ -38,6 +40,37 @@ int referee_state_init(void)
         referee_state.last_seen_tick[armor_id] = 0;
     }
     return 0;
+}
+
+void referee_state_toggle_team(void)
+{
+    tx_mutex_get(&referee_state_mutex, TX_WAIT_FOREVER);
+    if (referee_state.team == REFEREE_MAIN_TEAM_RED)
+    {
+        referee_state.team = REFEREE_MAIN_TEAM_BLUE;
+    }
+    else
+    {
+        referee_state.team = REFEREE_MAIN_TEAM_RED;
+    }
+    tx_mutex_put(&referee_state_mutex);
+}
+
+void referee_state_reset(void)
+{
+    tx_mutex_get(&referee_state_mutex, TX_WAIT_FOREVER);
+    referee_state.current_hp = referee_state.maximum_hp;
+    referee_state.team = REFEREE_MAIN_INITIAL_TEAM;
+    referee_state.seen_mask = 0;
+    referee_state.last_hit_armor_id = 0;
+    referee_state.last_hit_dx = 0;
+    referee_state.last_hit_ax_raw = 0;
+    referee_state.hit_count = 0;
+    for (uint8_t armor_id = 0; armor_id < REFEREE_MAIN_ARMOR_COUNT; armor_id++)
+    {
+        referee_state.last_seen_tick[armor_id] = 0;
+    }
+    tx_mutex_put(&referee_state_mutex);
 }
 
 void referee_state_mark_armor_seen(uint8_t armor_id, uint16_t ax_raw, uint8_t dx)
@@ -93,6 +126,7 @@ void referee_state_get_snapshot(referee_state_snapshot_t *snapshot)
     tx_mutex_get(&referee_state_mutex, TX_WAIT_FOREVER);
     snapshot->current_hp = referee_state.current_hp;
     snapshot->maximum_hp = referee_state.maximum_hp;
+    snapshot->team = referee_state.team;
     snapshot->online_mask = 0;
     for (uint8_t armor_id = 0; armor_id < REFEREE_MAIN_ARMOR_COUNT; armor_id++)
     {

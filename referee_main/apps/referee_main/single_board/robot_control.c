@@ -5,6 +5,8 @@
 #include "armor_link.h"
 #include "bsp_def.h"
 #include "bsp_uart.h"
+#include "gpio.h"
+#include "iwdg.h"
 #include "REFEREE/referee_protocol.h"
 #include "referee_config.h"
 #include "referee_packet.h"
@@ -29,10 +31,13 @@ enum
 static TX_THREAD referee_tx_thread;
 static TX_THREAD armor_rx_thread;
 static TX_THREAD hit_event_thread;
+static TX_THREAD referee_watchdog_thread;
 
 APPS_STACK_SECTION static uint8_t referee_tx_thread_stack[REFEREE_MAIN_THREAD_STACK_SIZE];
 APPS_STACK_SECTION static uint8_t armor_rx_thread_stack[REFEREE_MAIN_THREAD_STACK_SIZE];
 APPS_STACK_SECTION static uint8_t hit_event_thread_stack[REFEREE_MAIN_THREAD_STACK_SIZE];
+APPS_STACK_SECTION static uint8_t referee_watchdog_thread_stack[
+    REFEREE_MAIN_WATCHDOG_STACK_SIZE];
 
 static TX_QUEUE armor_event_queue;
 static ULONG    armor_event_queue_storage[REFEREE_MAIN_ARMOR_EVENT_QUEUE_LENGTH *
@@ -44,6 +49,17 @@ static UART_Device *armor_uart[REFEREE_MAIN_ARMOR_COUNT];
 static uint8_t      armor_rx_buffer[REFEREE_MAIN_ARMOR_COUNT][REFEREE_MAIN_ARMOR_RX_BUFFER_SIZE]
     BUFFER_SECTION;
 static uint8_t referee_sequence;
+static uint8_t armor_config_sequence;
+
+typedef struct
+{
+    uint8_t last_raw_pressed;
+    uint8_t stable_pressed;
+    ULONG   raw_changed_tick;
+} referee_button_t;
+
+static referee_button_t key1_state;
+static referee_button_t key2_state;
 
 static int referee_send_frame(uint16_t command_id, const void *payload, uint16_t payload_length)
 {
@@ -83,7 +99,9 @@ static void referee_send_robot_status(void)
     robot_status_t            payload = {0};
 
     referee_state_get_snapshot(&snapshot);
-    payload.robot_id = REFEREE_MAIN_ROBOT_ID;
+    payload.robot_id = snapshot.team == REFEREE_MAIN_TEAM_BLUE
+                           ? REFEREE_MAIN_ROBOT_ID_BLUE
+                           : REFEREE_MAIN_ROBOT_ID_RED;
     payload.robot_level = REFEREE_MAIN_ROBOT_LEVEL;
     payload.current_hp = snapshot.current_hp;
     payload.maximum_hp = snapshot.maximum_hp;
@@ -155,6 +173,39 @@ static void referee_send_hurt_status(uint8_t armor_id)
     if (referee_send_frame(CMD_ID_HURT_STATUS, &payload.byte, sizeof(payload.byte)) != 0)
     {
         LOG_W("send hurt status failed");
+    }
+}
+
+static void referee_send_armor_config(void)
+{
+    referee_state_snapshot_t snapshot;
+
+    referee_state_get_snapshot(&snapshot);
+
+    for (uint8_t port_id = 0; port_id < REFEREE_MAIN_ARMOR_COUNT; port_id++)
+    {
+        uint8_t frame[REFEREE_MAIN_ARMOR_CONFIG_SIZE] = {0};
+        uint8_t sum = 0U;
+
+        frame[0] = REFEREE_SOF;
+        frame[1] = REFEREE_MAIN_ARMOR_CONFIG_CMD;
+        frame[2] = snapshot.team;
+        frame[3] = port_id;
+        frame[4] = 1U;
+        frame[5] = 0U;
+        frame[6] = armor_config_sequence++;
+        for (uint8_t index = 0; index < REFEREE_MAIN_ARMOR_CONFIG_SIZE - 1U; index++)
+        {
+            sum = (uint8_t)(sum + frame[index]);
+        }
+        frame[7] = sum;
+
+        if (armor_uart[port_id] == 0 ||
+            BSP_UART_Send(armor_uart[port_id], frame, sizeof(frame), 50U) !=
+                (int)sizeof(frame))
+        {
+            LOG_W("send armor config failed: port=%u", (unsigned int)port_id);
+        }
     }
 }
 
@@ -255,21 +306,145 @@ static uint8_t referee_time_reached(ULONG now, ULONG deadline)
     return (int32_t)(now - deadline) >= 0;
 }
 
+static void referee_led_write(GPIO_TypeDef *port, uint16_t pin, uint8_t on)
+{
+    HAL_GPIO_WritePin(port,
+                      pin,
+                      (GPIO_PinState)(on != 0U
+                                          ? REFEREE_MAIN_LED_ACTIVE_LEVEL
+                                          : REFEREE_MAIN_LED_INACTIVE_LEVEL));
+}
+
+static void referee_led_apply_team(uint8_t team)
+{
+#if REFEREE_MAIN_LED_ENABLE
+    referee_led_write(LED_R_GPIO_Port, LED_R_Pin, team == REFEREE_MAIN_TEAM_RED);
+    referee_led_write(LED_B_GPIO_Port, LED_B_Pin, team == REFEREE_MAIN_TEAM_BLUE);
+    referee_led_write(LED_G_GPIO_Port, LED_G_Pin, 0U);
+#else
+    (void)team;
+#endif
+}
+
+static void referee_led_refresh(void)
+{
+    referee_state_snapshot_t snapshot;
+
+    referee_state_get_snapshot(&snapshot);
+    referee_led_apply_team(snapshot.team);
+}
+
+static uint8_t referee_button_read_pressed(GPIO_TypeDef *port, uint16_t pin)
+{
+    return HAL_GPIO_ReadPin(port, pin) == (GPIO_PinState)REFEREE_MAIN_KEY_ACTIVE_LEVEL;
+}
+
+static void referee_button_init(referee_button_t *button,
+                                GPIO_TypeDef *port,
+                                uint16_t pin,
+                                ULONG now)
+{
+    uint8_t pressed = referee_button_read_pressed(port, pin);
+
+    button->last_raw_pressed = pressed;
+    button->stable_pressed = pressed;
+    button->raw_changed_tick = now;
+}
+
+static uint8_t referee_button_pressed(referee_button_t *button,
+                                      GPIO_TypeDef *port,
+                                      uint16_t pin,
+                                      ULONG now)
+{
+    uint8_t pressed = referee_button_read_pressed(port, pin);
+
+    if (pressed != button->last_raw_pressed)
+    {
+        button->last_raw_pressed = pressed;
+        button->raw_changed_tick = now;
+    }
+    if ((now - button->raw_changed_tick) < REFEREE_MAIN_KEY_DEBOUNCE_MS)
+    {
+        return 0;
+    }
+    if (pressed != button->stable_pressed)
+    {
+        button->stable_pressed = pressed;
+        return pressed;
+    }
+    return 0;
+}
+
+static void referee_buttons_init(void)
+{
+    ULONG now = tx_time_get();
+
+    referee_button_init(&key1_state, KEY_1_GPIO_Port, KEY_1_Pin, now);
+    referee_button_init(&key2_state, KEY_2_GPIO_Port, KEY_2_Pin, now);
+}
+
+static void referee_buttons_process(void)
+{
+    ULONG now = tx_time_get();
+    uint8_t key1_pressed = 0;
+    uint8_t key2_pressed = 0;
+
+#if REFEREE_MAIN_BUTTON_ENABLE && REFEREE_MAIN_KEY1_ENABLE
+    key1_pressed = referee_button_pressed(&key1_state, KEY_1_GPIO_Port, KEY_1_Pin, now);
+#endif
+#if REFEREE_MAIN_BUTTON_ENABLE && REFEREE_MAIN_KEY2_ENABLE
+    key2_pressed = referee_button_pressed(&key2_state, KEY_2_GPIO_Port, KEY_2_Pin, now);
+#endif
+
+    if (key1_pressed != 0U)
+    {
+        referee_state_toggle_team();
+        referee_led_refresh();
+        LOG_I("team toggled");
+    }
+    if (key2_pressed != 0U)
+    {
+        referee_state_reset();
+        referee_led_refresh();
+        LOG_I("referee state reset");
+    }
+}
+
+static void referee_watchdog_thread_entry(ULONG thread_input)
+{
+    (void)thread_input;
+
+    while (1)
+    {
+#if REFEREE_MAIN_WATCHDOG_ENABLE
+        HAL_IWDG_Refresh(&hiwdg);
+#endif
+        tx_thread_sleep(REFEREE_MAIN_WATCHDOG_PERIOD_MS);
+    }
+}
+
 static void referee_tx_thread_entry(ULONG thread_input)
 {
     ULONG next_status;
     ULONG next_hp;
     ULONG next_game;
+    ULONG next_armor_config;
 
     (void)thread_input;
     next_status = tx_time_get();
     next_hp = next_status;
     next_game = next_status;
+    next_armor_config = next_status;
 
     while (1)
     {
         ULONG now = tx_time_get();
 
+        if (referee_time_reached(now, next_armor_config))
+        {
+            referee_send_armor_config();
+            next_armor_config += REFEREE_MAIN_ARMOR_CONFIG_PERIOD_MS;
+        }
         if (referee_time_reached(now, next_status))
         {
             referee_send_robot_status();
@@ -288,7 +463,8 @@ static void referee_tx_thread_entry(ULONG thread_input)
             next_game += REFEREE_MAIN_GAME_PERIOD_MS;
         }
 
-        tx_thread_sleep(10);
+        referee_buttons_process();
+        tx_thread_sleep(REFEREE_MAIN_KEY_POLL_PERIOD_MS);
     }
 }
 
@@ -340,11 +516,32 @@ void robot_control_init(void)
 {
     UINT status;
 
+    __HAL_DBGMCU_FREEZE_IWDG();
+
+    status = tx_thread_create(&referee_watchdog_thread,
+                              "referee_watchdog",
+                              referee_watchdog_thread_entry,
+                              0,
+                              referee_watchdog_thread_stack,
+                              sizeof(referee_watchdog_thread_stack),
+                              5,
+                              5,
+                              TX_NO_TIME_SLICE,
+                              TX_AUTO_START);
+    if (status != TX_SUCCESS)
+    {
+        LOG_E("referee watchdog thread create failed: %u", status);
+        return;
+    }
+
     if (referee_state_init() != 0)
     {
         LOG_E("referee state init failed");
         return;
     }
+
+    referee_buttons_init();
+    referee_led_refresh();
 
     status = tx_mutex_create(&referee_tx_mutex, "referee_tx", TX_INHERIT);
     if (status != TX_SUCCESS)

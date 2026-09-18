@@ -17,10 +17,22 @@ case "$BOARD" in
   damiao_h7)
     TARGET="stm32h7x"
     JLINK_DEV="STM32H743BI"
+    BUILD_BOARD="damiao_h7"
     ;;
   dji_c)
     TARGET="stm32f4x"
     JLINK_DEV="STM32F407IG"
+    BUILD_BOARD="dji_c"
+    ;;
+  f103_c8)
+    TARGET="stm32f1x"
+    JLINK_DEV="STM32F103C8"
+    BUILD_BOARD="f103_c8"
+    ;;
+  f105_rc)
+    TARGET="stm32f1x"
+    JLINK_DEV="STM32F105RC"
+    BUILD_BOARD="105_rc"
     ;;
   *)
     echo "[ERROR] Unknown board: $BOARD"
@@ -28,7 +40,7 @@ case "$BOARD" in
     ;;
 esac
 
-ELF_PATH="${WORKSPACE_ROOT}/build/${BOARD}/${BUILD_TYPE}/base.elf"
+ELF_PATH="${WORKSPACE_ROOT}/build/${BUILD_BOARD}/${BUILD_TYPE}/base.elf"
 if [[ ! -f "$ELF_PATH" ]]; then
   echo "[ERROR] ELF file not found: $ELF_PATH"
   exit 1
@@ -70,7 +82,7 @@ JLINK_EOF
       echo "[ERROR] openocd not found in PATH"
       exit 1
     fi
-    openocd -f "$IFACE" -f "target/${TARGET}.cfg" -c "program build/${BOARD}/${BUILD_TYPE}/base.elf verify reset exit"
+    openocd -f "$IFACE" -f "target/${TARGET}.cfg" -c "program build/${BUILD_BOARD}/${BUILD_TYPE}/base.elf verify reset exit"
     ;;
   *)
     echo "[ERROR] Unknown probe: $PROBE"
