@@ -324,10 +324,10 @@ static void ui_draw_armor(int16_t x)
         int16_t by = (int16_t)((port - ui_armor_offset) * 32U);
         ui_text_large((int16_t)(x + 2), by, "P");
         ui_u32_big((int16_t)(x + 20), (int16_t)(by + 4), port);
-        ui_text_large((int16_t)(x + 32), by,
+        ui_text_bold((int16_t)(x + 32), (int16_t)(by + 4),
                 (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
-        ui_text_large((int16_t)(x + 58), by, "R");
-        ui_u32_fit((int16_t)(x + 76), (int16_t)(by + 4), diagnostics.packet_count, 94);
+        ui_text_large((int16_t)(x + 54), by, "R");
+        ui_u32_fit((int16_t)(x + 72), (int16_t)(by + 4), diagnostics.packet_count, 94);
         ui_text_large((int16_t)(x + 96), by, "H");
         ui_u32_fit((int16_t)(x + 114), (int16_t)(by + 4), diagnostics.hit_count, 127);
         if (port == ui_armor_offset)
