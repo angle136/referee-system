@@ -242,6 +242,45 @@ static int16_t ui_u32_big(int16_t x, int16_t y, uint32_t value)
     return (int16_t)(x + count * 8U);
 }
 
+static int16_t ui_u32_xl(int16_t x, int16_t y, uint32_t value)
+{
+    char digits[11];
+    uint8_t count = 0U;
+    uint8_t i;
+
+    do
+    {
+        digits[count++] = (char)('0' + (value % 10U));
+        value /= 10U;
+    } while (value != 0U && count < sizeof(digits) - 1U);
+    for (i = 0U; i < count / 2U; ++i)
+    {
+        char swap = digits[i];
+        digits[i] = digits[count - 1U - i];
+        digits[count - 1U - i] = swap;
+    }
+    digits[count] = '\0';
+    ui_text_scaled(x, y, digits, 2U);
+    return (int16_t)(x + count * 16U);
+}
+
+static int16_t ui_u32_fit(int16_t x, int16_t y, uint32_t value,
+                          int16_t right_limit)
+{
+    uint32_t probe = value;
+    uint8_t digits = 1U;
+    while (probe >= 10U)
+    {
+        probe /= 10U;
+        ++digits;
+    }
+    if ((int32_t)x + (int32_t)digits * 16 <= right_limit)
+    {
+        return ui_u32_xl(x, y, value);
+    }
+    return ui_u32_big(x, y, value);
+}
+
 static void ui_draw_main(int16_t x)
 {
     referee_state_snapshot_t state;
@@ -250,15 +289,15 @@ static void ui_draw_main(int16_t x)
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
     ui_text((int16_t)(x + 2), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
-    ui_u32_big((int16_t)(x + 82), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
-    ui_text_big((int16_t)(x + 2), 13, "HP");
-    ui_u32_big((int16_t)(x + 24), 12, state.current_hp);
+    ui_u32_fit((int16_t)(x + 78), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED, 127);
+    ui_text((int16_t)(x + 2), 16, "HP");
+    ui_u32_fit((int16_t)(x + 24), 12, state.current_hp, 127);
     OLED_DrawHLine((int16_t)(x + 56), 20, 7U);
-    ui_u32_big((int16_t)(x + 66), 12, state.maximum_hp);
-    ui_text_big((int16_t)(x + 2), 38, "HIT");
-    ui_u32_big((int16_t)(x + 34), 38, state.hit_count);
-    ui_text_big((int16_t)(x + 70), 38, "TX");
-    ui_u32_big((int16_t)(x + 94), 38, control.referee_tx_count);
+    ui_u32_fit((int16_t)(x + 66), 12, state.maximum_hp, 127);
+    ui_text((int16_t)(x + 2), 42, "HIT");
+    ui_u32_fit((int16_t)(x + 34), 38, state.hit_count, 63);
+    ui_text((int16_t)(x + 64), 42, "TX");
+    ui_u32_fit((int16_t)(x + 80), 38, control.referee_tx_count, 127);
 }
 
 static void ui_draw_armor(int16_t x)
@@ -274,14 +313,14 @@ static void ui_draw_armor(int16_t x)
         armor_link_get_diagnostics(port, &diagnostics);
         referee_state_get_snapshot(&state);
         int16_t by = (int16_t)((port - ui_armor_offset) * 32U);
-        ui_text_big((int16_t)(x + 2), by, "P");
-        ui_u32_big((int16_t)(x + 14), by, port);
-        ui_text((int16_t)(x + 30), (int16_t)(by + 4),
+        ui_text((int16_t)(x + 2), (int16_t)(by + 4), "P");
+        ui_u32_big((int16_t)(x + 10), by, port);
+        ui_text((int16_t)(x + 28), (int16_t)(by + 4),
                 (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
-        ui_text_big((int16_t)(x + 48), by, "R");
-        ui_u32_big((int16_t)(x + 58), by, diagnostics.packet_count);
-        ui_text_big((int16_t)(x + 88), by, "H");
-        ui_u32_big((int16_t)(x + 98), by, diagnostics.hit_count);
+        ui_text((int16_t)(x + 54), (int16_t)(by + 4), "R");
+        ui_u32_fit((int16_t)(x + 62), by, diagnostics.packet_count, 93);
+        ui_text((int16_t)(x + 94), (int16_t)(by + 4), "H");
+        ui_u32_fit((int16_t)(x + 102), by, diagnostics.hit_count, 127);
         if (port == ui_armor_offset)
         {
             OLED_DrawHLine(x, 30, 128U);
@@ -293,18 +332,18 @@ static void ui_draw_protocol(int16_t x)
 {
     referee_control_diagnostics_t control;
     referee_control_get_diagnostics(&control);
-    ui_text((int16_t)(x + 2), 2, "TX");
-    ui_u32_big((int16_t)(x + 26), 0, control.referee_tx_count);
-    ui_text((int16_t)(x + 70), 2, "E");
-    ui_u32_big((int16_t)(x + 78), 0, control.referee_tx_error_count);
-    ui_text((int16_t)(x + 2), 18, "CFG");
-    ui_u32_big((int16_t)(x + 34), 16, control.armor_config_tx_count);
-    ui_text((int16_t)(x + 70), 18, "E");
-    ui_u32_big((int16_t)(x + 78), 16, control.armor_config_tx_error_count);
-    ui_text((int16_t)(x + 2), 34, "CMD");
-    ui_u32_big((int16_t)(x + 34), 32, control.last_command_id);
-    ui_text((int16_t)(x + 2), 50, "OUT");
-    ui_text((int16_t)(x + 34), 47, control.referee_tx_error_count == 0U ? "OK" : "ERR");
+    ui_text((int16_t)(x + 2), 4, "TX");
+    ui_u32_fit((int16_t)(x + 24), 0, control.referee_tx_count, 79);
+    ui_text((int16_t)(x + 82), 4, "E");
+    ui_u32_big((int16_t)(x + 94), 2, control.referee_tx_error_count);
+    ui_text((int16_t)(x + 2), 20, "CFG");
+    ui_u32_fit((int16_t)(x + 34), 16, control.armor_config_tx_count, 83);
+    ui_text((int16_t)(x + 86), 20, "E");
+    ui_u32_big((int16_t)(x + 98), 18, control.armor_config_tx_error_count);
+    ui_text((int16_t)(x + 2), 36, "CMD");
+    ui_u32_fit((int16_t)(x + 34), 32, control.last_command_id, 127);
+    ui_text((int16_t)(x + 2), 52, "OUT");
+    ui_text((int16_t)(x + 34), 52, control.referee_tx_error_count == 0U ? "OK" : "ERR");
 }
 
 static void ui_draw_debug(int16_t x)
@@ -324,14 +363,14 @@ static void ui_draw_debug(int16_t x)
     }
     referee_control_get_diagnostics(&control);
     referee_state_get_snapshot(&state);
-    ui_text((int16_t)(x + 2), 2, "CRC");
-    ui_u32_big((int16_t)(x + 34), 0, crc);
-    ui_text((int16_t)(x + 70), 2, "DUP");
-    ui_u32_big((int16_t)(x + 102), 0, duplicate);
-    ui_text((int16_t)(x + 2), 20, "DROP");
-    ui_u32_big((int16_t)(x + 42), 16, control.armor_event_drop_count);
-    ui_text((int16_t)(x + 2), 38, "LAST P");
-    ui_u32_big((int16_t)(x + 58), 34, state.last_hit_armor_id);
+    ui_text((int16_t)(x + 2), 4, "CRC");
+    ui_u32_fit((int16_t)(x + 34), 0, crc, 73);
+    ui_text((int16_t)(x + 74), 4, "DUP");
+    ui_u32_big((int16_t)(x + 102), 2, duplicate);
+    ui_text((int16_t)(x + 2), 22, "DROP");
+    ui_u32_fit((int16_t)(x + 42), 18, control.armor_event_drop_count, 127);
+    ui_text((int16_t)(x + 2), 40, "LAST P");
+    ui_u32_fit((int16_t)(x + 58), 36, state.last_hit_armor_id, 127);
 }
 
 /* Application-owned icon strip.  The shapes deliberately stay simple and
