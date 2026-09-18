@@ -458,10 +458,6 @@ static void ui_draw_settings(int16_t x)
              * item. */
             OLED_DrawRBox((int16_t)(x + 2), y, 124U, 29U, 3U);
             OLED_SetDrawMode(OLED_DRAW_CLEAR);
-            /* Keep the selection border away from the rounded outer edge.
-             * A plain inset frame is intentionally used here: it remains a
-             * crisp black line on panels whose rounded-corner pixels bloom. */
-            OLED_DrawFrame((int16_t)(x + 4), (int16_t)(y + 2), 120U, 25U);
         }
         else
         {
@@ -494,10 +490,12 @@ static void ui_draw_confirm(int16_t x)
     if (ui_confirm_focus == 0U)
     {
         OLED_DrawFrame((int16_t)(x + 10), 42, 76U, 18U);
+        OLED_DrawFrame((int16_t)(x + 11), 43, 74U, 16U);
     }
     else
     {
         OLED_DrawFrame((int16_t)(x + 93), 42, 28U, 18U);
+        OLED_DrawFrame((int16_t)(x + 94), 43, 26U, 16U);
     }
     OLED_SetDrawMode(OLED_DRAW_SET);
 }
