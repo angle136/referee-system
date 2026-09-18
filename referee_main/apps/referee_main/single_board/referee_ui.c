@@ -33,10 +33,15 @@ static ui_button_t ui_key3;
 static ui_button_t ui_key4;
 static uint8_t ui_active;
 static uint8_t ui_display_ready;
-/* 0 = icon home, 1..4 = the four detail pages. */
+/* 0 = icon home, 1..4 = detail pages, 5 = settings menu. */
 static uint8_t ui_page;
 static uint8_t ui_home_selected;
 static uint8_t ui_armor_offset;
+static uint8_t ui_settings_selected;
+static uint8_t ui_confirm_action;
+static uint8_t ui_confirm_focus;
+static uint32_t ui_toast_until;
+static const char *ui_toast_text;
 
 /* KK_UI validates that font pointers are present even for a custom-only app.
  * The custom page below uses the local 5x7 renderer, so this non-null marker is
@@ -142,6 +147,7 @@ static void ui_put_glyph(char character, uint16_t columns[7])
     else if (character == '/') { source[0] = 0x20; source[1] = 0x10; source[2] = 0x08; source[3] = 0x04; source[4] = 0x02; }
     else if (character == '.') { source[2] = 0x40; }
     else if (character == '%') { source[0] = 0x62; source[2] = 0x08; source[4] = 0x46; }
+    else if (character == '?') { source[0] = 0x02; source[1] = 0x01; source[2] = 0x51; source[3] = 0x09; source[4] = 0x06; }
     else if (character == '>') { source[1] = 0x08; source[2] = 0x14; source[3] = 0x22; }
     else if (character == '<') { source[1] = 0x22; source[2] = 0x14; source[3] = 0x08; }
     else if (character == '=') { source[1] = source[2] = source[3] = 0x14; }
@@ -436,6 +442,57 @@ static void ui_draw_debug(int16_t x)
     ui_u32_fit((int16_t)(x + 58), 36, state.last_hit_armor_id, 127);
 }
 
+static void ui_draw_settings(int16_t x)
+{
+    static const char *const items[] = {"TEAM", "RESET"};
+    uint8_t i;
+
+    for (i = 0U; i < 2U; ++i)
+    {
+        int16_t y = (int16_t)(4 + i * 24U);
+        if (i == ui_settings_selected)
+        {
+            OLED_DrawRFrame((int16_t)(x + 1), (int16_t)(y - 2),
+                            126U, 20U, 3U);
+        }
+        ui_text_bold((int16_t)(x + 8), y, items[i]);
+        ui_text((int16_t)(x + 112), (int16_t)(y + 4), ">");
+    }
+}
+
+static void ui_draw_confirm(int16_t x)
+{
+    const char *title = ui_confirm_action == 1U ? "SWITCH TEAM?" : "RESET SYSTEM?";
+
+    OLED_DrawRBox((int16_t)(x + 3), 8, 122U, 48U, 4U);
+    OLED_SetDrawMode(OLED_DRAW_CLEAR);
+    ui_text_bold((int16_t)(x + 10), 13, title);
+    ui_text_bold((int16_t)(x + 14), 39, "CANCEL");
+    ui_text_bold((int16_t)(x + 86), 39, "OK");
+    OLED_SetDrawMode(OLED_DRAW_SET);
+    if (ui_confirm_focus == 0U)
+    {
+        OLED_DrawRFrame((int16_t)(x + 9), 35, 58U, 17U, 3U);
+    }
+    else
+    {
+        OLED_DrawRFrame((int16_t)(x + 81), 35, 36U, 17U, 3U);
+    }
+}
+
+static void ui_draw_toast(int16_t x)
+{
+    if (ui_toast_until == 0U || ui_toast_text == 0)
+    {
+        return;
+    }
+    OLED_DrawRBox((int16_t)(x + 15), 48, 98U, 16U, 3U);
+    OLED_SetDrawMode(OLED_DRAW_CLEAR);
+    ui_text_bold((int16_t)(x + 64 - (int16_t)(strlen(ui_toast_text) * 4U)),
+                 52, ui_toast_text);
+    OLED_SetDrawMode(OLED_DRAW_SET);
+}
+
 /* Application-owned icon strip.  The shapes deliberately stay simple and
  * monochrome so they remain legible on a 128x64 SSD1306 panel. */
 static void ui_draw_icon(uint8_t kind, int16_t x, int16_t y, uint8_t selected)
@@ -472,6 +529,14 @@ static void ui_draw_icon(uint8_t kind, int16_t x, int16_t y, uint8_t selected)
         OLED_DrawLine(x + 3, y + 5, x + 9, y + 1);
         OLED_DrawLine(x + 25, y + 21, x + 19, y + 25);
         break;
+    case 4U: /* settings */
+        OLED_DrawCircle(x + 14, y + 13, 7U);
+        OLED_DrawDisc(x + 14, y + 13, 2U);
+        OLED_DrawLine(x + 14, y + 1, x + 14, y + 5);
+        OLED_DrawLine(x + 14, y + 21, x + 14, y + 25);
+        OLED_DrawLine(x + 2, y + 13, x + 6, y + 13);
+        OLED_DrawLine(x + 22, y + 13, x + 26, y + 13);
+        break;
     default: /* diagnostics */
         OLED_DrawFrame(x + 4, y + 4, 21U, 21U);
         OLED_DrawVLine(x + 9, y + 18, 3U);
@@ -483,13 +548,24 @@ static void ui_draw_icon(uint8_t kind, int16_t x, int16_t y, uint8_t selected)
 
 static void ui_draw_home(int16_t x)
 {
-    static const char *const labels[] = {"MAIN", "ARMOR", "PROTO", "DEBUG"};
+    static const char *const labels[] = {"MAIN", "ARMOR", "PROTO", "DEBUG", "SET"};
     uint8_t i;
-    for (i = 0U; i < 4U; ++i)
+    for (i = 0U; i < 5U; ++i)
     {
-        int16_t delta = (int16_t)i - (int16_t)ui_home_selected;
-        if (delta > 2) delta = -1;
-        if (delta < -2) delta = 1;
+        int16_t delta;
+
+        /* Show only the selected icon and its immediate neighbours.  A
+         * simple clamp is not sufficient for five entries: when selection is
+         * at either end it would draw two different icons at the same x. */
+        if (i == ui_home_selected)
+            delta = 0;
+        else if (i == (uint8_t)((ui_home_selected + 1U) % 5U))
+            delta = 1;
+        else if (i == (uint8_t)((ui_home_selected + 4U) % 5U))
+            delta = -1;
+        else
+            continue;
+
         if (delta >= -1 && delta <= 1)
         {
             int16_t icon_x = (int16_t)(48 + delta * 44);
@@ -520,7 +596,52 @@ void KK_UI_CustomOnLeave(KK_UI_PageId page)
 void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
 {
     (void)page;
-    if (ui_page == 2U && event.action == KK_UI_INPUT_UP)
+    if (ui_confirm_action != 0U)
+    {
+        if (event.action == KK_UI_INPUT_UP || event.action == KK_UI_INPUT_DOWN)
+        {
+            ui_confirm_focus = (uint8_t)(ui_confirm_focus == 0U ? 1U : 0U);
+            KK_UI_Invalidate();
+        }
+        else if (event.action == KK_UI_INPUT_OK)
+        {
+            if (ui_confirm_focus != 0U)
+            {
+                if (ui_confirm_action == 1U)
+                {
+                    referee_state_toggle_team();
+                    referee_control_refresh_led();
+                    ui_toast_text = "TEAM CHANGED";
+                }
+                else
+                {
+                    referee_state_reset();
+                    referee_control_refresh_led();
+                    ui_toast_text = "RESET OK";
+                }
+                ui_toast_until = tx_time_get() + 1500U;
+            }
+            ui_confirm_action = 0U;
+            KK_UI_Invalidate();
+        }
+    }
+    else if (ui_page == 5U && event.action == KK_UI_INPUT_UP)
+    {
+        ui_settings_selected = (uint8_t)((ui_settings_selected + 1U) % 2U);
+        KK_UI_Invalidate();
+    }
+    else if (ui_page == 5U && event.action == KK_UI_INPUT_DOWN)
+    {
+        ui_settings_selected = (uint8_t)((ui_settings_selected + 1U) % 2U);
+        KK_UI_Invalidate();
+    }
+    else if (ui_page == 5U && event.action == KK_UI_INPUT_OK)
+    {
+        ui_confirm_action = (uint8_t)(ui_settings_selected + 1U);
+        ui_confirm_focus = 0U;
+        KK_UI_Invalidate();
+    }
+    else if (ui_page == 2U && event.action == KK_UI_INPUT_UP)
     {
         ui_armor_offset = 0U;
         KK_UI_Invalidate();
@@ -532,12 +653,12 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
     }
     else if (ui_page == 0U && event.action == KK_UI_INPUT_UP)
     {
-        ui_home_selected = (uint8_t)((ui_home_selected + 3U) % 4U);
+        ui_home_selected = (uint8_t)((ui_home_selected + 4U) % 5U);
         KK_UI_Invalidate();
     }
     else if (ui_page == 0U && event.action == KK_UI_INPUT_DOWN)
     {
-        ui_home_selected = (uint8_t)((ui_home_selected + 1U) % 4U);
+        ui_home_selected = (uint8_t)((ui_home_selected + 1U) % 5U);
         KK_UI_Invalidate();
     }
     else if (ui_page == 0U && event.action == KK_UI_INPUT_OK)
@@ -546,6 +667,10 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
         if (ui_page == 2U)
         {
             ui_armor_offset = 0U;
+        }
+        if (ui_page == 5U)
+        {
+            ui_settings_selected = 0U;
         }
         KK_UI_Invalidate();
     }
@@ -560,6 +685,13 @@ bool KK_UI_CustomOnTick(KK_UI_PageId page, uint32_t now_ms)
 {
     static uint32_t last_redraw;
     (void)page;
+    if (ui_toast_until != 0U &&
+        (int32_t)(now_ms - ui_toast_until) >= 0)
+    {
+        ui_toast_until = 0U;
+        ui_toast_text = 0;
+        return true;
+    }
     if ((now_ms - last_redraw) >= 100U)
     {
         last_redraw = now_ms;
@@ -579,7 +711,16 @@ void KK_UI_CustomOnDraw(KK_UI_PageId page, int16_t x_offset,
     case 1U: ui_draw_main(x_offset); break;
     case 2U: ui_draw_armor(x_offset); break;
     case 3U: ui_draw_protocol(x_offset); break;
+    case 5U: ui_draw_settings(x_offset); break;
     default: ui_draw_debug(x_offset); break;
+    }
+    if (ui_confirm_action != 0U)
+    {
+        ui_draw_confirm(x_offset);
+    }
+    else if (ui_page == 5U)
+    {
+        ui_draw_toast(x_offset);
     }
     OLED_ResetClipWindow();
 }
@@ -610,6 +751,11 @@ static UINT ui_display_start(void)
     ui_page = 0U;
     ui_home_selected = 0U;
     ui_armor_offset = 0U;
+    ui_settings_selected = 0U;
+    ui_confirm_action = 0U;
+    ui_confirm_focus = 0U;
+    ui_toast_until = 0U;
+    ui_toast_text = 0;
     KK_UI_Invalidate();
     return TX_SUCCESS;
 }
