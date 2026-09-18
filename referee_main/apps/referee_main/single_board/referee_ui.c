@@ -155,9 +155,12 @@ static void ui_put_glyph(char character, uint16_t columns[7])
         uint8_t source_column = (uint8_t)(((uint16_t)i * 5U) / 7U);
         uint8_t row;
 
-        for (row = 0U; row < 9U; ++row)
+        /* Keep the ninth row as a mandatory blank spacer.  The renderer still
+         * uses a 7x9 cell, but glyph ink occupies only rows 0..7 so the
+         * lower edge of one text line cannot merge into the next line. */
+        for (row = 0U; row < 8U; ++row)
         {
-            uint8_t source_row = (uint8_t)(((uint16_t)row * 7U) / 9U);
+            uint8_t source_row = (uint8_t)(((uint16_t)row * 7U) / 8U);
             /* The hand-entered numeric columns use the opposite vertical
              * bit convention from the alphabet table. */
             if (character >= '0' && character <= '9')
@@ -184,9 +187,9 @@ static void ui_text_scaled(int16_t x, int16_t y, const char *text,
         ui_put_glyph(*text++, glyph);
         for (column = 0U; column < 7U; ++column)
         {
-            for (row = 0U; row < 9U; ++row)
+            for (row = 0U; row < 8U; ++row)
             {
-                if ((glyph[column] & (uint8_t)(1U << row)) != 0U)
+                if ((glyph[column] & (uint16_t)(1U << row)) != 0U)
                 {
                     uint8_t dx;
                     uint8_t dy;
@@ -213,28 +216,6 @@ static void ui_text(int16_t x, int16_t y, const char *text)
 static void ui_text_big(int16_t x, int16_t y, const char *text)
 {
     ui_text_scaled(x, y, text, 2U);
-}
-
-static int16_t ui_u32(int16_t x, int16_t y, uint32_t value)
-{
-    char digits[11];
-    uint8_t count = 0U;
-    uint8_t i;
-
-    do
-    {
-        digits[count++] = (char)('0' + (value % 10U));
-        value /= 10U;
-    } while (value != 0U && count < sizeof(digits));
-    for (i = 0U; i < count / 2U; ++i)
-    {
-        char swap = digits[i];
-        digits[i] = digits[count - 1U - i];
-        digits[count - 1U - i] = swap;
-    }
-    digits[count] = '\0';
-    ui_text(x, y, digits);
-    return (int16_t)(x + count * 8U);
 }
 
 static int16_t ui_u32_big(int16_t x, int16_t y, uint32_t value)
@@ -270,14 +251,14 @@ static void ui_draw_main(int16_t x)
     referee_control_get_diagnostics(&control);
     ui_text((int16_t)(x + 2), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
     ui_u32_big((int16_t)(x + 82), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
-    ui_text((int16_t)(x + 2), 15, "HP");
-    ui_u32_big((int16_t)(x + 24), 13, state.current_hp);
-    OLED_DrawHLine((int16_t)(x + 56), 18, 7U);
-    ui_u32_big((int16_t)(x + 66), 13, state.maximum_hp);
-    ui_text((int16_t)(x + 2), 31, "HIT");
-    ui_u32_big((int16_t)(x + 34), 29, state.hit_count);
-    ui_text((int16_t)(x + 70), 31, "TX");
-    ui_u32_big((int16_t)(x + 94), 29, control.referee_tx_count);
+    ui_text_big((int16_t)(x + 2), 13, "HP");
+    ui_u32_big((int16_t)(x + 24), 12, state.current_hp);
+    OLED_DrawHLine((int16_t)(x + 56), 20, 7U);
+    ui_u32_big((int16_t)(x + 66), 12, state.maximum_hp);
+    ui_text_big((int16_t)(x + 2), 38, "HIT");
+    ui_u32_big((int16_t)(x + 34), 38, state.hit_count);
+    ui_text_big((int16_t)(x + 70), 38, "TX");
+    ui_u32_big((int16_t)(x + 94), 38, control.referee_tx_count);
 }
 
 static void ui_draw_armor(int16_t x)
@@ -292,16 +273,19 @@ static void ui_draw_armor(int16_t x)
 
         armor_link_get_diagnostics(port, &diagnostics);
         referee_state_get_snapshot(&state);
-        int16_t bx = (int16_t)((port & 1U) * 64U);
-        int16_t by = (int16_t)((port >> 1U) * 32U);
-        ui_text((int16_t)(x + bx + 2), by, "P");
-        ui_u32_big((int16_t)(x + bx + 12), by, port);
-        ui_text((int16_t)(x + bx + 28), (int16_t)(by + 4),
+        int16_t by = (int16_t)((port - ui_armor_offset) * 32U);
+        ui_text_big((int16_t)(x + 2), by, "P");
+        ui_u32_big((int16_t)(x + 14), by, port);
+        ui_text((int16_t)(x + 30), (int16_t)(by + 4),
                 (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
-        ui_text((int16_t)(x + bx + 2), (int16_t)(by + 19), "R");
-        ui_u32_big((int16_t)(x + bx + 10), (int16_t)(by + 16), diagnostics.packet_count);
-        ui_text((int16_t)(x + bx + 38), (int16_t)(by + 19), "H");
-        ui_u32_big((int16_t)(x + bx + 46), (int16_t)(by + 16), diagnostics.hit_count);
+        ui_text_big((int16_t)(x + 48), by, "R");
+        ui_u32_big((int16_t)(x + 58), by, diagnostics.packet_count);
+        ui_text_big((int16_t)(x + 88), by, "H");
+        ui_u32_big((int16_t)(x + 98), by, diagnostics.hit_count);
+        if (port == ui_armor_offset)
+        {
+            OLED_DrawHLine(x, 30, 128U);
+        }
     }
 }
 
@@ -320,7 +304,7 @@ static void ui_draw_protocol(int16_t x)
     ui_text((int16_t)(x + 2), 34, "CMD");
     ui_u32_big((int16_t)(x + 34), 32, control.last_command_id);
     ui_text((int16_t)(x + 2), 50, "OUT");
-    ui_text_big((int16_t)(x + 34), 46, control.referee_tx_error_count == 0U ? "OK" : "ERR");
+    ui_text((int16_t)(x + 34), 47, control.referee_tx_error_count == 0U ? "OK" : "ERR");
 }
 
 static void ui_draw_debug(int16_t x)
@@ -341,7 +325,7 @@ static void ui_draw_debug(int16_t x)
     referee_control_get_diagnostics(&control);
     referee_state_get_snapshot(&state);
     ui_text((int16_t)(x + 2), 2, "CRC");
-    ui_u32((int16_t)(x + 34), 0, crc);
+    ui_u32_big((int16_t)(x + 34), 0, crc);
     ui_text((int16_t)(x + 70), 2, "DUP");
     ui_u32_big((int16_t)(x + 102), 0, duplicate);
     ui_text((int16_t)(x + 2), 20, "DROP");
