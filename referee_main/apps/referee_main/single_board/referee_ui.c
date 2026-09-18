@@ -158,6 +158,12 @@ static void ui_put_glyph(char character, uint16_t columns[7])
         for (row = 0U; row < 9U; ++row)
         {
             uint8_t source_row = (uint8_t)(((uint16_t)row * 7U) / 9U);
+            /* The hand-entered numeric columns use the opposite vertical
+             * bit convention from the alphabet table. */
+            if (character >= '0' && character <= '9')
+            {
+                source_row = (uint8_t)(6U - source_row);
+            }
             if ((source[source_column] & (uint8_t)(1U << source_row)) != 0U)
             {
                 columns[i] |= (uint16_t)(1U << row);
