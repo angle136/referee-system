@@ -147,32 +147,28 @@ static void ui_put_glyph(char character, uint16_t columns[7])
     else if (character == '<') { source[1] = 0x22; source[2] = 0x14; source[3] = 0x08; }
     else if (character == '=') { source[1] = source[2] = source[3] = 0x14; }
 
-    /* Expand the compact source glyph to a regular 7x9 cell. This keeps the
-     * application font self-contained while making the visual stroke and
-     * spacing appropriate for the 128x64 panel. */
-    for (i = 0U; i < 7U; ++i)
+    /* Keep the original 5x7 columns intact. Scaling is done only by
+     * ui_text_scaled(), using exact integer pixel blocks; interpolation here
+     * was causing missing bottom strokes on the real SSD1306. */
+    for (i = 0U; i < 5U; ++i)
     {
-        uint8_t source_column = (uint8_t)(((uint16_t)i * 5U) / 7U);
-        uint8_t row;
-
-        /* Keep the ninth row as a mandatory blank spacer.  The renderer still
-         * uses a 7x9 cell, but glyph ink occupies only rows 0..7 so the
-         * lower edge of one text line cannot merge into the next line. */
-        for (row = 0U; row < 8U; ++row)
+        columns[i] = source[i];
+        if (character >= '0' && character <= '9')
         {
-            uint8_t source_row = (uint8_t)(((uint16_t)row * 7U) / 8U);
-            /* The hand-entered numeric columns use the opposite vertical
-             * bit convention from the alphabet table. */
-            if (character >= '0' && character <= '9')
+            uint16_t flipped = 0U;
+            uint8_t row;
+            for (row = 0U; row < 7U; ++row)
             {
-                source_row = (uint8_t)(6U - source_row);
+                if ((source[i] & (uint8_t)(1U << row)) != 0U)
+                {
+                    flipped |= (uint16_t)(1U << (6U - row));
+                }
             }
-            if ((source[source_column] & (uint8_t)(1U << source_row)) != 0U)
-            {
-                columns[i] |= (uint16_t)(1U << row);
-            }
+            columns[i] = flipped;
         }
     }
+    columns[5] = 0U;
+    columns[6] = 0U;
 }
 
 static void ui_text_scaled(int16_t x, int16_t y, const char *text,
