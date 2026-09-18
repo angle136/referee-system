@@ -224,6 +224,54 @@ static void ui_text_large(int16_t x, int16_t y, const char *text)
     ui_text_scaled(x, y, text, 2U);
 }
 
+/* Compact 2x renderer for the MAIN page: five source columns become ten
+ * pixels plus a two-pixel gap.  This preserves the large 14-pixel glyphs
+ * without paying the normal 16-pixel advance for every character. */
+static void ui_text_main_large(int16_t x, int16_t y, const char *text)
+{
+    while (text != 0 && *text != '\0')
+    {
+        uint16_t glyph[7];
+        uint8_t column;
+        uint8_t row;
+
+        ui_put_glyph(*text++, glyph);
+        for (column = 0U; column < 5U; ++column)
+        {
+            for (row = 0U; row < 7U; ++row)
+            {
+                if ((glyph[column] & (uint16_t)(1U << row)) != 0U)
+                {
+                    OLED_DrawBox((int16_t)(x + column * 2U),
+                                 (int16_t)(y + row * 2U), 2U, 2U);
+                }
+            }
+        }
+        x = (int16_t)(x + 12);
+    }
+}
+
+static void ui_u32_main_large(int16_t x, int16_t y, uint32_t value)
+{
+    char digits[11];
+    uint8_t count = 0U;
+    uint8_t i;
+
+    do
+    {
+        digits[count++] = (char)('0' + (value % 10U));
+        value /= 10U;
+    } while (value != 0U && count < sizeof(digits) - 1U);
+    for (i = 0U; i < count / 2U; ++i)
+    {
+        char swap = digits[i];
+        digits[i] = digits[count - 1U - i];
+        digits[count - 1U - i] = swap;
+    }
+    digits[count] = '\0';
+    ui_text_main_large(x, y, digits);
+}
+
 static int16_t ui_u32_big(int16_t x, int16_t y, uint32_t value)
 {
     char digits[11];
@@ -294,19 +342,28 @@ static void ui_draw_main(int16_t x)
 
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
-    ui_text((int16_t)(x + 2), 0,
-            state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
-    ui_u32_fit((int16_t)(x + 78), 0,
-               state.team == REFEREE_MAIN_TEAM_BLUE ?
-               REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED, 127);
-    ui_text((int16_t)(x + 2), 24, "HP");
-    ui_u32_big((int16_t)(x + 24), 21, state.current_hp);
-    OLED_DrawLine((int16_t)(x + 55), 28, (int16_t)(x + 61), 21);
-    ui_u32_big((int16_t)(x + 66), 21, state.maximum_hp);
-    ui_text((int16_t)(x + 2), 39, "HIT");
-    ui_u32_fit((int16_t)(x + 34), 38, state.hit_count, 63);
-    ui_text((int16_t)(x + 64), 39, "TX");
-    ui_u32_fit((int16_t)(x + 80), 38, control.referee_tx_count, 127);
+    ui_text_bold((int16_t)(x + 2), 3,
+                 state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B" : "TEAM R");
+    ui_text_main_large((int16_t)(x + 54), 0, "ID");
+    ui_u32_main_large((int16_t)(x + 82), 0,
+                      state.team == REFEREE_MAIN_TEAM_BLUE ?
+                      REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
+
+    ui_text_main_large((int16_t)(x + 2), 21, "HP");
+    ui_u32_main_large((int16_t)(x + 30), 21, state.current_hp);
+    OLED_DrawLine((int16_t)(x + 70), 21, (int16_t)(x + 75), 34);
+    ui_u32_main_large((int16_t)(x + 80), 21, state.maximum_hp);
+
+    ui_text_main_large((int16_t)(x + 2), 44, "HIT");
+    if (state.hit_count < 100U)
+        ui_u32_main_large((int16_t)(x + 42), 44, state.hit_count);
+    else
+        ui_u32_big((int16_t)(x + 42), 47, state.hit_count);
+    ui_text_main_large((int16_t)(x + 70), 44, "TX");
+    if (control.referee_tx_count < 100U)
+        ui_u32_main_large((int16_t)(x + 98), 44, control.referee_tx_count);
+    else
+        ui_u32_big((int16_t)(x + 98), 47, control.referee_tx_count);
 }
 
 static void ui_draw_armor(int16_t x)
