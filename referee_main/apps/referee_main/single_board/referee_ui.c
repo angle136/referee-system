@@ -96,7 +96,7 @@ static uint8_t ui_button_press(ui_button_t *button, uint8_t pressed, ULONG now)
     return 0U;
 }
 
-static void ui_put_glyph(char character, uint8_t columns[5])
+static void ui_put_glyph(char character, uint16_t columns[7])
 {
     static const uint8_t letters[26][5] = {
         {0x7E,0x11,0x11,0x11,0x7E},{0x7F,0x49,0x49,0x49,0x36},
@@ -121,39 +121,58 @@ static void ui_put_glyph(char character, uint8_t columns[5])
         {0x36,0x49,0x49,0x49,0x36},{0x30,0x49,0x49,0x4A,0x3C}
     };
     uint8_t i;
+    uint8_t source[5] = {0U};
 
-    for (i = 0U; i < 5U; ++i) columns[i] = 0U;
+    for (i = 0U; i < 7U; ++i) columns[i] = 0U;
     if (character >= 'a' && character <= 'z') character = (char)(character - 'a' + 'A');
     if (character >= 'A' && character <= 'Z')
     {
-        for (i = 0U; i < 5U; ++i) columns[i] = letters[character - 'A'][i];
+        for (i = 0U; i < 5U; ++i) source[i] = letters[character - 'A'][i];
     }
     else if (character >= '0' && character <= '9')
     {
-        for (i = 0U; i < 5U; ++i) columns[i] = digits[character - '0'][i];
+        for (i = 0U; i < 5U; ++i) source[i] = digits[character - '0'][i];
     }
-    else if (character == ':') { columns[1] = 0x24; columns[3] = 0x24; }
-    else if (character == '-') { columns[1] = columns[2] = columns[3] = 0x08; }
-    else if (character == '/') { columns[0] = 0x20; columns[1] = 0x10; columns[2] = 0x08; columns[3] = 0x04; columns[4] = 0x02; }
-    else if (character == '.') { columns[2] = 0x40; }
-    else if (character == '%') { columns[0] = 0x62; columns[2] = 0x08; columns[4] = 0x46; }
-    else if (character == '>') { columns[1] = 0x08; columns[2] = 0x14; columns[3] = 0x22; }
-    else if (character == '<') { columns[1] = 0x22; columns[2] = 0x14; columns[3] = 0x08; }
-    else if (character == '=') { columns[1] = columns[2] = columns[3] = 0x14; }
+    else if (character == ':') { source[1] = 0x24; source[3] = 0x24; }
+    else if (character == '-') { source[1] = source[2] = source[3] = 0x08; }
+    else if (character == '/') { source[0] = 0x20; source[1] = 0x10; source[2] = 0x08; source[3] = 0x04; source[4] = 0x02; }
+    else if (character == '.') { source[2] = 0x40; }
+    else if (character == '%') { source[0] = 0x62; source[2] = 0x08; source[4] = 0x46; }
+    else if (character == '>') { source[1] = 0x08; source[2] = 0x14; source[3] = 0x22; }
+    else if (character == '<') { source[1] = 0x22; source[2] = 0x14; source[3] = 0x08; }
+    else if (character == '=') { source[1] = source[2] = source[3] = 0x14; }
+
+    /* Expand the compact source glyph to a regular 7x9 cell. This keeps the
+     * application font self-contained while making the visual stroke and
+     * spacing appropriate for the 128x64 panel. */
+    for (i = 0U; i < 7U; ++i)
+    {
+        uint8_t source_column = (uint8_t)(((uint16_t)i * 5U) / 7U);
+        uint8_t row;
+
+        for (row = 0U; row < 9U; ++row)
+        {
+            uint8_t source_row = (uint8_t)(((uint16_t)row * 7U) / 9U);
+            if ((source[source_column] & (uint8_t)(1U << source_row)) != 0U)
+            {
+                columns[i] |= (uint16_t)(1U << row);
+            }
+        }
+    }
 }
 
 static void ui_text(int16_t x, int16_t y, const char *text)
 {
     while (text != 0 && *text != '\0')
     {
-        uint8_t glyph[5];
+        uint16_t glyph[7];
         uint8_t column;
         uint8_t row;
 
         ui_put_glyph(*text++, glyph);
-        for (column = 0U; column < 5U; ++column)
+        for (column = 0U; column < 7U; ++column)
         {
-            for (row = 0U; row < 7U; ++row)
+            for (row = 0U; row < 9U; ++row)
             {
                 if ((glyph[column] & (uint8_t)(1U << row)) != 0U)
                 {
@@ -161,7 +180,7 @@ static void ui_text(int16_t x, int16_t y, const char *text)
                 }
             }
         }
-        x = (int16_t)(x + 6);
+        x = (int16_t)(x + 8);
     }
 }
 
@@ -184,21 +203,21 @@ static int16_t ui_u32(int16_t x, int16_t y, uint32_t value)
     }
     digits[count] = '\0';
     ui_text(x, y, digits);
-    return (int16_t)(x + count * 6U);
+    return (int16_t)(x + count * 8U);
 }
 
 static void ui_title(int16_t x, const char *title)
 {
-    ui_text(x, 1, title);
-    OLED_DrawHLine(x, 9, 128U);
+    ui_text(x, 0, title);
+    OLED_DrawHLine(x, 10, 128U);
 }
 
 static void ui_footer(int16_t x)
 {
-    ui_text((int16_t)(x + 102), 56, "<>");
-    ui_text((int16_t)(x + 6), 56, "P");
-    ui_u32((int16_t)(x + 12), 56, (uint32_t)ui_page + 1U);
-    ui_text((int16_t)(x + 24), 56, "/4");
+    ui_text((int16_t)(x + 104), 55, "<>");
+    ui_text((int16_t)(x + 8), 55, "P");
+    ui_u32((int16_t)(x + 16), 55, (uint32_t)ui_page + 1U);
+    ui_text((int16_t)(x + 32), 55, "/4");
 }
 
 static void ui_draw_main(int16_t x)
@@ -209,18 +228,16 @@ static void ui_draw_main(int16_t x)
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
     ui_title(x, "MAIN");
-    ui_text((int16_t)(x + 2), 12, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
-    ui_u32((int16_t)(x + 62), 12, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
-    ui_text((int16_t)(x + 2), 22, "HP");
-    ui_u32((int16_t)(x + 20), 22, state.current_hp);
-    ui_text((int16_t)(x + 50), 22, "/");
-    ui_u32((int16_t)(x + 62), 22, state.maximum_hp);
-    ui_text((int16_t)(x + 2), 32, "ARM");
-    ui_u32((int16_t)(x + 32), 32, state.online_mask);
-    ui_text((int16_t)(x + 2), 42, "HIT");
-    ui_u32((int16_t)(x + 26), 42, state.hit_count);
-    ui_text((int16_t)(x + 62), 42, "TX");
-    ui_u32((int16_t)(x + 80), 42, control.referee_tx_count);
+    ui_text((int16_t)(x + 2), 13, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
+    ui_u32((int16_t)(x + 82), 13, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
+    ui_text((int16_t)(x + 2), 25, "HP");
+    ui_u32((int16_t)(x + 26), 25, state.current_hp);
+    ui_text((int16_t)(x + 58), 25, "/");
+    ui_u32((int16_t)(x + 66), 25, state.maximum_hp);
+    ui_text((int16_t)(x + 2), 37, "HIT");
+    ui_u32((int16_t)(x + 34), 37, state.hit_count);
+    ui_text((int16_t)(x + 70), 37, "TX");
+    ui_u32((int16_t)(x + 94), 37, control.referee_tx_count);
     ui_footer(x);
 }
 
@@ -235,13 +252,14 @@ static void ui_draw_armor(int16_t x)
 
         armor_link_get_diagnostics(port, &diagnostics);
         referee_state_get_snapshot(&state);
-        ui_text((int16_t)(x + 2), (int16_t)(12 + port * 10U), "P");
-        ui_u32((int16_t)(x + 8), (int16_t)(12 + port * 10U), port);
-        ui_text((int16_t)(x + 20), (int16_t)(12 + port * 10U), (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
-        ui_text((int16_t)(x + 40), (int16_t)(12 + port * 10U), "R");
-        ui_u32((int16_t)(x + 46), (int16_t)(12 + port * 10U), diagnostics.packet_count);
-        ui_text((int16_t)(x + 82), (int16_t)(12 + port * 10U), "H");
-        ui_u32((int16_t)(x + 88), (int16_t)(12 + port * 10U), diagnostics.hit_count);
+        int16_t y = (int16_t)(13 + port * 10U);
+        ui_text((int16_t)(x + 2), y, "P");
+        ui_u32((int16_t)(x + 10), y, port);
+        ui_text((int16_t)(x + 26), y, (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
+        ui_text((int16_t)(x + 50), y, "R");
+        ui_u32((int16_t)(x + 58), y, diagnostics.packet_count);
+        ui_text((int16_t)(x + 90), y, "H");
+        ui_u32((int16_t)(x + 98), y, diagnostics.hit_count);
     }
     ui_footer(x);
 }
@@ -251,18 +269,18 @@ static void ui_draw_protocol(int16_t x)
     referee_control_diagnostics_t control;
     referee_control_get_diagnostics(&control);
     ui_title(x, "PROTOCOL");
-    ui_text((int16_t)(x + 2), 12, "TX");
-    ui_u32((int16_t)(x + 20), 12, control.referee_tx_count);
-    ui_text((int16_t)(x + 62), 12, "E");
-    ui_u32((int16_t)(x + 74), 12, control.referee_tx_error_count);
-    ui_text((int16_t)(x + 2), 22, "CFG");
-    ui_u32((int16_t)(x + 26), 22, control.armor_config_tx_count);
-    ui_text((int16_t)(x + 62), 22, "E");
-    ui_u32((int16_t)(x + 74), 22, control.armor_config_tx_error_count);
-    ui_text((int16_t)(x + 2), 32, "CMD");
-    ui_u32((int16_t)(x + 32), 32, control.last_command_id);
-    ui_text((int16_t)(x + 2), 42, "OUT");
-    ui_text((int16_t)(x + 28), 42, control.referee_tx_error_count == 0U ? "OK" : "ERR");
+    ui_text((int16_t)(x + 2), 13, "TX");
+    ui_u32((int16_t)(x + 26), 13, control.referee_tx_count);
+    ui_text((int16_t)(x + 70), 13, "E");
+    ui_u32((int16_t)(x + 78), 13, control.referee_tx_error_count);
+    ui_text((int16_t)(x + 2), 25, "CFG");
+    ui_u32((int16_t)(x + 34), 25, control.armor_config_tx_count);
+    ui_text((int16_t)(x + 70), 25, "E");
+    ui_u32((int16_t)(x + 78), 25, control.armor_config_tx_error_count);
+    ui_text((int16_t)(x + 2), 37, "CMD");
+    ui_u32((int16_t)(x + 34), 37, control.last_command_id);
+    ui_text((int16_t)(x + 2), 43, "OUT");
+    ui_text((int16_t)(x + 34), 43, control.referee_tx_error_count == 0U ? "OK" : "ERR");
     ui_footer(x);
 }
 
@@ -284,18 +302,14 @@ static void ui_draw_debug(int16_t x)
     referee_control_get_diagnostics(&control);
     referee_state_get_snapshot(&state);
     ui_title(x, "DEBUG");
-    ui_text((int16_t)(x + 2), 12, "CRC");
-    ui_u32((int16_t)(x + 26), 12, crc);
-    ui_text((int16_t)(x + 62), 12, "DUP");
-    ui_u32((int16_t)(x + 86), 12, duplicate);
-    ui_text((int16_t)(x + 2), 22, "DROP");
-    ui_u32((int16_t)(x + 32), 22, control.armor_event_drop_count);
-    ui_text((int16_t)(x + 2), 32, "HP");
-    ui_u32((int16_t)(x + 20), 32, state.current_hp);
-    ui_text((int16_t)(x + 62), 32, "HIT");
-    ui_u32((int16_t)(x + 86), 32, state.hit_count);
-    ui_text((int16_t)(x + 2), 42, "LAST P");
-    ui_u32((int16_t)(x + 38), 42, state.last_hit_armor_id);
+    ui_text((int16_t)(x + 2), 13, "CRC");
+    ui_u32((int16_t)(x + 34), 13, crc);
+    ui_text((int16_t)(x + 70), 13, "DUP");
+    ui_u32((int16_t)(x + 102), 13, duplicate);
+    ui_text((int16_t)(x + 2), 25, "DROP");
+    ui_u32((int16_t)(x + 42), 25, control.armor_event_drop_count);
+    ui_text((int16_t)(x + 2), 37, "LAST P");
+    ui_u32((int16_t)(x + 58), 37, state.last_hit_armor_id);
     ui_footer(x);
 }
 
