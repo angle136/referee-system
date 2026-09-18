@@ -220,11 +220,6 @@ static void ui_text_bold(int16_t x, int16_t y, const char *text)
     ui_text((int16_t)(x + 1), y, text);
 }
 
-static void ui_text_big(int16_t x, int16_t y, const char *text)
-{
-    ui_text_scaled(x, y, text, 2U);
-}
-
 static void ui_text_large(int16_t x, int16_t y, const char *text)
 {
     ui_text_scaled(x, y, text, 2U);
@@ -442,15 +437,17 @@ static void ui_draw_debug(int16_t x)
     ui_u32_fit((int16_t)(x + 58), 36, state.last_hit_armor_id, 127);
 }
 
-static void ui_draw_settings(int16_t x)
+static void ui_draw_menu_rows(int16_t x, const char *const *items,
+                              uint8_t item_count, uint8_t selected,
+                              uint8_t first)
 {
-    static const char *const items[] = {"TEAM", "RESET"};
-    uint8_t i;
+    uint8_t row;
 
-    for (i = 0U; i < 2U; ++i)
+    for (row = 0U; row < 2U; ++row)
     {
-        int16_t y = (int16_t)(1 + i * 32U);
-        if (i == ui_settings_selected)
+        uint8_t index = (uint8_t)((first + row) % item_count);
+        int16_t y = (int16_t)(1 + row * 32U);
+        if (index == selected)
         {
             /* Fill the selected row, then draw its text in clear mode.  The
              * 31-pixel rows leave a full blank line between the two large
@@ -463,10 +460,17 @@ static void ui_draw_settings(int16_t x)
         {
             OLED_SetDrawMode(OLED_DRAW_SET);
         }
-        ui_text_main_large((int16_t)(x + 10), (int16_t)(y + 7), items[i]);
+        ui_text_main_large((int16_t)(x + 10), (int16_t)(y + 7), items[index]);
         ui_text_main_large((int16_t)(x + 106), (int16_t)(y + 7), ">");
         OLED_SetDrawMode(OLED_DRAW_SET);
     }
+}
+
+static void ui_draw_settings(int16_t x)
+{
+    static const char *const items[] = {"TEAM", "RESET"};
+
+    ui_draw_menu_rows(x, items, 2U, ui_settings_selected, 0U);
 }
 
 static void ui_draw_confirm(int16_t x)
@@ -514,93 +518,12 @@ static void ui_draw_toast(int16_t x)
     OLED_SetDrawMode(OLED_DRAW_SET);
 }
 
-/* Application-owned icon strip.  The shapes deliberately stay simple and
- * monochrome so they remain legible on a 128x64 SSD1306 panel. */
-static void ui_draw_icon(uint8_t kind, int16_t x, int16_t y, uint8_t selected)
-{
-    if (selected != 0U)
-    {
-        OLED_DrawRFrame(x - 2, y - 2, 32U, 30U, 3U);
-    }
-    switch (kind)
-    {
-    case 0U: /* robot / main state */
-        OLED_DrawFrame(x + 7, y + 7, 14U, 13U);
-        OLED_DrawBox(x + 10, y + 2, 8U, 5U);
-        OLED_DrawVLine(x + 14, y, 2U);
-        OLED_DrawPixel(x + 11, y + 12);
-        OLED_DrawPixel(x + 17, y + 12);
-        OLED_DrawHLine(x + 10, y + 17, 8U);
-        OLED_DrawVLine(x + 9, y + 20, 5U);
-        OLED_DrawVLine(x + 19, y + 20, 5U);
-        break;
-    case 1U: /* armor / shield */
-        OLED_DrawLine(x + 14, y + 2, x + 24, y + 7);
-        OLED_DrawLine(x + 24, y + 7, x + 21, y + 20);
-        OLED_DrawLine(x + 21, y + 20, x + 14, y + 25);
-        OLED_DrawLine(x + 14, y + 25, x + 7, y + 20);
-        OLED_DrawLine(x + 7, y + 20, x + 4, y + 7);
-        OLED_DrawLine(x + 4, y + 7, x + 14, y + 2);
-        OLED_DrawHLine(x + 9, y + 13, 10U);
-        break;
-    case 2U: /* serial / protocol */
-        OLED_DrawCircle(x + 9, y + 13, 5U);
-        OLED_DrawCircle(x + 19, y + 13, 5U);
-        OLED_DrawHLine(x + 12, y + 13, 4U);
-        OLED_DrawLine(x + 3, y + 5, x + 9, y + 1);
-        OLED_DrawLine(x + 25, y + 21, x + 19, y + 25);
-        break;
-    case 4U: /* settings */
-        OLED_DrawCircle(x + 14, y + 13, 7U);
-        OLED_DrawDisc(x + 14, y + 13, 2U);
-        OLED_DrawLine(x + 14, y + 1, x + 14, y + 5);
-        OLED_DrawLine(x + 14, y + 21, x + 14, y + 25);
-        OLED_DrawLine(x + 2, y + 13, x + 6, y + 13);
-        OLED_DrawLine(x + 22, y + 13, x + 26, y + 13);
-        break;
-    default: /* diagnostics */
-        OLED_DrawFrame(x + 4, y + 4, 21U, 21U);
-        OLED_DrawVLine(x + 9, y + 18, 3U);
-        OLED_DrawVLine(x + 14, y + 13, 8U);
-        OLED_DrawVLine(x + 19, y + 8, 13U);
-        break;
-    }
-}
-
 static void ui_draw_home(int16_t x)
 {
     static const char *const labels[] = {"MAIN", "ARMOR", "PROTO", "DEBUG", "SET"};
-    uint8_t i;
-    for (i = 0U; i < 5U; ++i)
-    {
-        int16_t delta;
+    uint8_t first = ui_home_selected < 2U ? 0U : (uint8_t)(ui_home_selected - 1U);
 
-        /* Show only the selected icon and its immediate neighbours.  A
-         * simple clamp is not sufficient for five entries: when selection is
-         * at either end it would draw two different icons at the same x. */
-        if (i == ui_home_selected)
-            delta = 0;
-        else if (i == (uint8_t)((ui_home_selected + 1U) % 5U))
-            delta = 1;
-        else if (i == (uint8_t)((ui_home_selected + 4U) % 5U))
-            delta = -1;
-        else
-            continue;
-
-        if (delta >= -1 && delta <= 1)
-        {
-            int16_t icon_x = (int16_t)(48 + delta * 44);
-            ui_draw_icon(i, (int16_t)(x + icon_x), 2,
-                         i == ui_home_selected ? 1U : 0U);
-        }
-    }
-    OLED_DrawRBox((int16_t)(x + 8), 42, 112U, 22U, 4U);
-    OLED_SetDrawMode(OLED_DRAW_CLEAR);
-    ui_text_big((int16_t)(x + 64 - (int16_t)(strlen(labels[ui_home_selected]) * 8U)),
-                44, labels[ui_home_selected]);
-    OLED_SetDrawMode(OLED_DRAW_SET);
-    ui_text_big((int16_t)(x + 1), 44, "<");
-    ui_text_big((int16_t)(x + 113), 44, ">");
+    ui_draw_menu_rows(x, labels, 5U, ui_home_selected, first);
 }
 
 void KK_UI_CustomOnEnter(KK_UI_PageId page)
