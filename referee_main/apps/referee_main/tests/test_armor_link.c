@@ -53,7 +53,7 @@ int main(void)
     armor_link_process(0U, frame, sizeof(frame));
     assert(callback_count == 1U);
 
-    fake_tick = 101U;
+    fake_tick = 301U;
     make_frame(frame, 3U, 1U, 512U, 12U);
     armor_link_process(0U, frame, sizeof(frame));
     assert(callback_count == 2U);

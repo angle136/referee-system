@@ -48,12 +48,12 @@ static void armor_link_emit(uint8_t port_id, const uint8_t *data)
     packet.sequence = data[6];
 
     now = tx_time_get();
+    /* A single physical hit can be reported as DX, ADC and BOTH packets.
+     * Sequence numbers are transport-frame numbers, not hit IDs, so a
+     * retransmit may also carry a new sequence.  Treat every non-heartbeat
+     * packet in the short hit window as the same hit. */
     if (packet.event != REFEREE_MAIN_ARMOR_EVENT_HEARTBEAT &&
         last_event_valid[port_id] &&
-        ((last_event_sequence[port_id] == packet.sequence) ||
-         (last_event_type[port_id] == packet.event &&
-          last_event_dx[port_id] == packet.dx &&
-          last_event_ax_raw[port_id] == packet.ax_raw)) &&
         (now - last_event_tick[port_id]) < REFEREE_MAIN_HIT_DEDUP_MS)
     {
         duplicate_count[port_id]++;

@@ -36,6 +36,8 @@ static uint8_t ui_display_ready;
 /* 0 = icon home, 1..4 = the four detail pages. */
 static uint8_t ui_page;
 static uint8_t ui_home_selected;
+static uint8_t ui_armor_offset;
+static uint8_t ui_armor_offset;
 
 /* KK_UI validates that font pointers are present even for a custom-only app.
  * The custom page below uses the local 5x7 renderer, so this non-null marker is
@@ -152,15 +154,10 @@ static void ui_put_glyph(char character, uint16_t columns[7])
     {
         uint8_t source_column = (uint8_t)(((uint16_t)i * 5U) / 7U);
         uint8_t row;
-        uint8_t flip_vertical = (character >= '0' && character <= '9');
 
         for (row = 0U; row < 9U; ++row)
         {
             uint8_t source_row = (uint8_t)(((uint16_t)row * 7U) / 9U);
-            if (flip_vertical != 0U)
-            {
-                source_row = (uint8_t)(6U - source_row);
-            }
             if ((source[source_column] & (uint8_t)(1U << source_row)) != 0U)
             {
                 columns[i] |= (uint16_t)(1U << row);
@@ -252,8 +249,10 @@ static int16_t ui_u32_big(int16_t x, int16_t y, uint32_t value)
         digits[count - 1U - i] = swap;
     }
     digits[count] = '\0';
-    ui_text_big(x, y, digits);
-    return (int16_t)(x + count * 16U);
+    /* A one-pixel bold pass keeps numbers readable while fitting the rows. */
+    ui_text(x, y, digits);
+    ui_text((int16_t)(x + 1), y, digits);
+    return (int16_t)(x + count * 8U);
 }
 
 static void ui_draw_main(int16_t x)
@@ -263,22 +262,24 @@ static void ui_draw_main(int16_t x)
 
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
-    ui_text((int16_t)(x + 2), 1, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
+    ui_text((int16_t)(x + 2), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
     ui_u32_big((int16_t)(x + 82), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED);
-    ui_text((int16_t)(x + 2), 23, "HP");
-    ui_u32_big((int16_t)(x + 24), 20, state.current_hp);
-    ui_text((int16_t)(x + 61), 23, "/");
-    ui_u32_big((int16_t)(x + 70), 20, state.maximum_hp);
-    ui_text((int16_t)(x + 2), 46, "HIT");
-    ui_u32_big((int16_t)(x + 34), 43, state.hit_count);
-    ui_text((int16_t)(x + 72), 46, "TX");
-    ui_u32_big((int16_t)(x + 94), 43, control.referee_tx_count);
+    ui_text((int16_t)(x + 2), 15, "HP");
+    ui_u32_big((int16_t)(x + 24), 13, state.current_hp);
+    OLED_DrawHLine((int16_t)(x + 56), 18, 7U);
+    ui_u32_big((int16_t)(x + 66), 13, state.maximum_hp);
+    ui_text((int16_t)(x + 2), 31, "HIT");
+    ui_u32_big((int16_t)(x + 34), 29, state.hit_count);
+    ui_text((int16_t)(x + 70), 31, "TX");
+    ui_u32_big((int16_t)(x + 94), 29, control.referee_tx_count);
 }
 
 static void ui_draw_armor(int16_t x)
 {
     uint8_t port;
-    for (port = 0U; port < REFEREE_MAIN_ARMOR_COUNT; ++port)
+    for (port = ui_armor_offset;
+         port < (uint8_t)(ui_armor_offset + 2U) &&
+         port < REFEREE_MAIN_ARMOR_COUNT; ++port)
     {
         armor_link_diagnostics_t diagnostics;
         referee_state_snapshot_t state;
@@ -287,14 +288,14 @@ static void ui_draw_armor(int16_t x)
         referee_state_get_snapshot(&state);
         int16_t bx = (int16_t)((port & 1U) * 64U);
         int16_t by = (int16_t)((port >> 1U) * 32U);
-        ui_text_big((int16_t)(x + bx + 2), by, "P");
+        ui_text((int16_t)(x + bx + 2), by, "P");
         ui_u32_big((int16_t)(x + bx + 12), by, port);
         ui_text((int16_t)(x + bx + 28), (int16_t)(by + 4),
                 (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
         ui_text((int16_t)(x + bx + 2), (int16_t)(by + 19), "R");
-        ui_u32((int16_t)(x + bx + 10), (int16_t)(by + 16), diagnostics.packet_count);
+        ui_u32_big((int16_t)(x + bx + 10), (int16_t)(by + 16), diagnostics.packet_count);
         ui_text((int16_t)(x + bx + 38), (int16_t)(by + 19), "H");
-        ui_u32((int16_t)(x + bx + 46), (int16_t)(by + 16), diagnostics.hit_count);
+        ui_u32_big((int16_t)(x + bx + 46), (int16_t)(by + 16), diagnostics.hit_count);
     }
 }
 
@@ -427,7 +428,17 @@ void KK_UI_CustomOnLeave(KK_UI_PageId page)
 void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
 {
     (void)page;
-    if (ui_page == 0U && event.action == KK_UI_INPUT_UP)
+    if (ui_page == 2U && event.action == KK_UI_INPUT_UP)
+    {
+        ui_armor_offset = 0U;
+        KK_UI_Invalidate();
+    }
+    else if (ui_page == 2U && event.action == KK_UI_INPUT_DOWN)
+    {
+        ui_armor_offset = 2U;
+        KK_UI_Invalidate();
+    }
+    else if (ui_page == 0U && event.action == KK_UI_INPUT_UP)
     {
         ui_home_selected = (uint8_t)((ui_home_selected + 3U) % 4U);
         KK_UI_Invalidate();
@@ -440,6 +451,10 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
     else if (ui_page == 0U && event.action == KK_UI_INPUT_OK)
     {
         ui_page = (uint8_t)(ui_home_selected + 1U);
+        if (ui_page == 2U)
+        {
+            ui_armor_offset = 0U;
+        }
         KK_UI_Invalidate();
     }
     else if (ui_page != 0U && event.action == KK_UI_INPUT_OK)
@@ -502,6 +517,7 @@ static UINT ui_display_start(void)
     ui_active = 1U;
     ui_page = 0U;
     ui_home_selected = 0U;
+    ui_armor_offset = 0U;
     KK_UI_Invalidate();
     return TX_SUCCESS;
 }
