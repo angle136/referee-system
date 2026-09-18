@@ -37,7 +37,6 @@ static uint8_t ui_display_ready;
 static uint8_t ui_page;
 static uint8_t ui_home_selected;
 static uint8_t ui_armor_offset;
-static uint8_t ui_armor_offset;
 
 /* KK_UI validates that font pointers are present even for a custom-only app.
  * The custom page below uses the local 5x7 renderer, so this non-null marker is
@@ -209,7 +208,13 @@ static void ui_text(int16_t x, int16_t y, const char *text)
     ui_text_scaled(x, y, text, 1U);
 }
 
-static void ui_text_big(int16_t x, int16_t y, const char *text)
+static void ui_text_bold(int16_t x, int16_t y, const char *text)
+{
+    ui_text(x, y, text);
+    ui_text((int16_t)(x + 1), y, text);
+}
+
+static void ui_text_large(int16_t x, int16_t y, const char *text)
 {
     ui_text_scaled(x, y, text, 2U);
 }
@@ -284,16 +289,24 @@ static void ui_draw_main(int16_t x)
 
     referee_state_get_snapshot(&state);
     referee_control_get_diagnostics(&control);
-    ui_text((int16_t)(x + 2), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B ID" : "TEAM R ID");
-    ui_u32_fit((int16_t)(x + 78), 0, state.team == REFEREE_MAIN_TEAM_BLUE ? REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED, 127);
-    ui_text((int16_t)(x + 2), 16, "HP");
-    ui_u32_fit((int16_t)(x + 24), 12, state.current_hp, 127);
-    OLED_DrawHLine((int16_t)(x + 56), 20, 7U);
-    ui_u32_fit((int16_t)(x + 66), 12, state.maximum_hp, 127);
-    ui_text((int16_t)(x + 2), 42, "HIT");
-    ui_u32_fit((int16_t)(x + 34), 38, state.hit_count, 63);
-    ui_text((int16_t)(x + 64), 42, "TX");
-    ui_u32_fit((int16_t)(x + 80), 38, control.referee_tx_count, 127);
+    ui_text_bold((int16_t)(x + 2), 0,
+                 state.team == REFEREE_MAIN_TEAM_BLUE ? "TEAM B" : "TEAM R");
+    ui_text_bold((int16_t)(x + 58), 4, "ID");
+    ui_u32_fit((int16_t)(x + 78), 0,
+               state.team == REFEREE_MAIN_TEAM_BLUE ?
+               REFEREE_MAIN_ROBOT_ID_BLUE : REFEREE_MAIN_ROBOT_ID_RED, 127);
+
+    ui_text_bold((int16_t)(x + 2), 18, "HP");
+    ui_u32_big((int16_t)(x + 24), 16, state.current_hp);
+    /* Draw the separator explicitly; it is not a font glyph and cannot be
+     * lost when the numeric columns are redrawn. */
+    OLED_DrawLine((int16_t)(x + 59), 16, (int16_t)(x + 55), 24);
+    ui_u32_big((int16_t)(x + 66), 16, state.maximum_hp);
+
+    ui_text_bold((int16_t)(x + 2), 39, "HIT");
+    ui_u32_fit((int16_t)(x + 34), 37, state.hit_count, 62);
+    ui_text_bold((int16_t)(x + 65), 39, "TX");
+    ui_u32_fit((int16_t)(x + 82), 37, control.referee_tx_count, 127);
 }
 
 static void ui_draw_armor(int16_t x)
@@ -309,14 +322,14 @@ static void ui_draw_armor(int16_t x)
         armor_link_get_diagnostics(port, &diagnostics);
         referee_state_get_snapshot(&state);
         int16_t by = (int16_t)((port - ui_armor_offset) * 32U);
-        ui_text((int16_t)(x + 2), (int16_t)(by + 4), "P");
-        ui_u32_big((int16_t)(x + 10), by, port);
-        ui_text((int16_t)(x + 28), (int16_t)(by + 4),
+        ui_text_large((int16_t)(x + 2), by, "P");
+        ui_u32_big((int16_t)(x + 20), (int16_t)(by + 4), port);
+        ui_text_large((int16_t)(x + 32), by,
                 (state.online_mask & (1U << port)) != 0U ? "ON" : "--");
-        ui_text((int16_t)(x + 54), (int16_t)(by + 4), "R");
-        ui_u32_fit((int16_t)(x + 62), by, diagnostics.packet_count, 93);
-        ui_text((int16_t)(x + 94), (int16_t)(by + 4), "H");
-        ui_u32_fit((int16_t)(x + 102), by, diagnostics.hit_count, 127);
+        ui_text_large((int16_t)(x + 58), by, "R");
+        ui_u32_fit((int16_t)(x + 76), (int16_t)(by + 4), diagnostics.packet_count, 94);
+        ui_text_large((int16_t)(x + 96), by, "H");
+        ui_u32_fit((int16_t)(x + 114), (int16_t)(by + 4), diagnostics.hit_count, 127);
         if (port == ui_armor_offset)
         {
             OLED_DrawHLine(x, 30, 128U);
@@ -328,18 +341,15 @@ static void ui_draw_protocol(int16_t x)
 {
     referee_control_diagnostics_t control;
     referee_control_get_diagnostics(&control);
-    ui_text((int16_t)(x + 2), 4, "TX");
-    ui_u32_fit((int16_t)(x + 24), 0, control.referee_tx_count, 79);
-    ui_text((int16_t)(x + 82), 4, "E");
-    ui_u32_big((int16_t)(x + 94), 2, control.referee_tx_error_count);
-    ui_text((int16_t)(x + 2), 20, "CFG");
-    ui_u32_fit((int16_t)(x + 34), 16, control.armor_config_tx_count, 83);
-    ui_text((int16_t)(x + 86), 20, "E");
-    ui_u32_big((int16_t)(x + 98), 18, control.armor_config_tx_error_count);
-    ui_text((int16_t)(x + 2), 36, "CMD");
-    ui_u32_fit((int16_t)(x + 34), 32, control.last_command_id, 127);
-    ui_text((int16_t)(x + 2), 52, "OUT");
-    ui_text((int16_t)(x + 34), 52, control.referee_tx_error_count == 0U ? "OK" : "ERR");
+    ui_text_bold((int16_t)(x + 2), 4, "TX");
+    ui_u32_xl((int16_t)(x + 28), 0, control.referee_tx_count);
+    ui_text_bold((int16_t)(x + 2), 20, "ERR");
+    ui_u32_xl((int16_t)(x + 34), 16, control.referee_tx_error_count);
+    ui_text_bold((int16_t)(x + 2), 36, "CFG");
+    ui_u32_xl((int16_t)(x + 28), 32, control.armor_config_tx_count);
+    ui_text_bold((int16_t)(x + 2), 52, "OUT");
+    ui_text_bold((int16_t)(x + 38), 52,
+                 control.referee_tx_error_count == 0U ? "OK" : "ERR");
 }
 
 static void ui_draw_debug(int16_t x)
@@ -359,13 +369,13 @@ static void ui_draw_debug(int16_t x)
     }
     referee_control_get_diagnostics(&control);
     referee_state_get_snapshot(&state);
-    ui_text((int16_t)(x + 2), 4, "CRC");
+    ui_text_bold((int16_t)(x + 2), 4, "CRC");
     ui_u32_fit((int16_t)(x + 34), 0, crc, 73);
-    ui_text((int16_t)(x + 74), 4, "DUP");
+    ui_text_bold((int16_t)(x + 74), 4, "DUP");
     ui_u32_big((int16_t)(x + 102), 2, duplicate);
-    ui_text((int16_t)(x + 2), 22, "DROP");
+    ui_text_bold((int16_t)(x + 2), 22, "DROP");
     ui_u32_fit((int16_t)(x + 42), 18, control.armor_event_drop_count, 127);
-    ui_text((int16_t)(x + 2), 40, "LAST P");
+    ui_text_bold((int16_t)(x + 2), 40, "LAST P");
     ui_u32_fit((int16_t)(x + 58), 36, state.last_hit_armor_id, 127);
 }
 
@@ -430,13 +440,15 @@ static void ui_draw_home(int16_t x)
                          i == ui_home_selected ? 1U : 0U);
         }
     }
-    OLED_DrawRBox((int16_t)(x + 8), 42, 112U, 22U, 4U);
+    /* Leave a clear gap below the icon frames; the previous 42..63 capsule
+     * visually climbed into the selected icon on the physical panel. */
+    OLED_DrawRBox((int16_t)(x + 12), 47, 104U, 17U, 3U);
     OLED_SetDrawMode(OLED_DRAW_CLEAR);
-    ui_text_big((int16_t)(x + 64 - (int16_t)(strlen(labels[ui_home_selected]) * 8U)),
-                44, labels[ui_home_selected]);
+    ui_text_bold((int16_t)(x + 64 - (int16_t)(strlen(labels[ui_home_selected]) * 4U)),
+                 51, labels[ui_home_selected]);
     OLED_SetDrawMode(OLED_DRAW_SET);
-    ui_text_big((int16_t)(x + 1), 44, "<");
-    ui_text_big((int16_t)(x + 110), 44, ">");
+    ui_text_bold((int16_t)(x + 2), 51, "<");
+    ui_text_bold((int16_t)(x + 118), 51, ">");
 }
 
 void KK_UI_CustomOnEnter(KK_UI_PageId page)
