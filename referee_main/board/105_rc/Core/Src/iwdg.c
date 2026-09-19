@@ -46,6 +46,9 @@ void MX_IWDG_Init(void)
   }
   /* USER CODE BEGIN IWDG_Init 2 */
 
+  /* Give the remaining startup sequence a full watchdog window. */
+  HAL_IWDG_Refresh(&hiwdg);
+
   /* USER CODE END IWDG_Init 2 */
 
 }
