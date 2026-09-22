@@ -11,13 +11,24 @@ typedef struct
     ULONG    last_seen_tick[REFEREE_MAIN_ARMOR_COUNT];
     uint8_t  seen_mask;
     uint8_t  last_hit_armor_id;
-    uint8_t  last_hit_dx;
-    uint16_t last_hit_ax_raw;
     uint32_t hit_count;
 } referee_state_t;
 
 static TX_MUTEX        referee_state_mutex;
 static referee_state_t referee_state;
+
+static void referee_state_reset_values(void)
+{
+    referee_state.current_hp = referee_state.maximum_hp;
+    referee_state.team = REFEREE_MAIN_INITIAL_TEAM;
+    referee_state.seen_mask = 0U;
+    referee_state.last_hit_armor_id = 0U;
+    referee_state.hit_count = 0U;
+    for (uint8_t armor_id = 0U; armor_id < REFEREE_MAIN_ARMOR_COUNT; armor_id++)
+    {
+        referee_state.last_seen_tick[armor_id] = 0U;
+    }
+}
 
 int referee_state_init(void)
 {
@@ -27,18 +38,8 @@ int referee_state_init(void)
         return -1;
     }
 
-    referee_state.current_hp = REFEREE_MAIN_MAX_HP;
     referee_state.maximum_hp = REFEREE_MAIN_MAX_HP;
-    referee_state.team = REFEREE_MAIN_INITIAL_TEAM;
-    referee_state.seen_mask = 0;
-    referee_state.last_hit_armor_id = 0;
-    referee_state.last_hit_dx = 0;
-    referee_state.last_hit_ax_raw = 0;
-    referee_state.hit_count = 0;
-    for (uint8_t armor_id = 0; armor_id < REFEREE_MAIN_ARMOR_COUNT; armor_id++)
-    {
-        referee_state.last_seen_tick[armor_id] = 0;
-    }
+    referee_state_reset_values();
     return 0;
 }
 
@@ -59,21 +60,11 @@ void referee_state_toggle_team(void)
 void referee_state_reset(void)
 {
     tx_mutex_get(&referee_state_mutex, TX_WAIT_FOREVER);
-    referee_state.current_hp = referee_state.maximum_hp;
-    referee_state.team = REFEREE_MAIN_INITIAL_TEAM;
-    referee_state.seen_mask = 0;
-    referee_state.last_hit_armor_id = 0;
-    referee_state.last_hit_dx = 0;
-    referee_state.last_hit_ax_raw = 0;
-    referee_state.hit_count = 0;
-    for (uint8_t armor_id = 0; armor_id < REFEREE_MAIN_ARMOR_COUNT; armor_id++)
-    {
-        referee_state.last_seen_tick[armor_id] = 0;
-    }
+    referee_state_reset_values();
     tx_mutex_put(&referee_state_mutex);
 }
 
-void referee_state_mark_armor_seen(uint8_t armor_id, uint16_t ax_raw, uint8_t dx)
+void referee_state_mark_armor_seen(uint8_t armor_id)
 {
     if (armor_id >= REFEREE_MAIN_ARMOR_COUNT)
     {
@@ -83,22 +74,28 @@ void referee_state_mark_armor_seen(uint8_t armor_id, uint16_t ax_raw, uint8_t dx
     tx_mutex_get(&referee_state_mutex, TX_WAIT_FOREVER);
     referee_state.seen_mask |= (uint8_t)(1U << armor_id);
     referee_state.last_seen_tick[armor_id] = tx_time_get();
-    referee_state.last_hit_ax_raw = ax_raw;
-    referee_state.last_hit_dx = dx;
     tx_mutex_put(&referee_state_mutex);
 }
 
-void referee_state_apply_hit(uint8_t armor_id, uint16_t ax_raw, uint8_t dx)
+void referee_state_apply_hits(uint8_t armor_id,
+                              uint16_t small_hit_delta,
+                              uint16_t big_hit_delta)
 {
+    uint32_t damage;
+    uint32_t total_hits;
+
     if (armor_id >= REFEREE_MAIN_ARMOR_COUNT)
     {
         return;
     }
 
+    damage = (uint32_t)small_hit_delta * REFEREE_MAIN_SMALL_HIT_DAMAGE +
+             (uint32_t)big_hit_delta * REFEREE_MAIN_BIG_HIT_DAMAGE;
+    total_hits = (uint32_t)small_hit_delta + big_hit_delta;
     tx_mutex_get(&referee_state_mutex, TX_WAIT_FOREVER);
-    if (referee_state.current_hp > REFEREE_MAIN_HURT_DAMAGE)
+    if (referee_state.current_hp > damage)
     {
-        referee_state.current_hp -= REFEREE_MAIN_HURT_DAMAGE;
+        referee_state.current_hp = (uint16_t)(referee_state.current_hp - damage);
     }
     else
     {
@@ -107,9 +104,7 @@ void referee_state_apply_hit(uint8_t armor_id, uint16_t ax_raw, uint8_t dx)
     referee_state.seen_mask |= (uint8_t)(1U << armor_id);
     referee_state.last_seen_tick[armor_id] = tx_time_get();
     referee_state.last_hit_armor_id = armor_id;
-    referee_state.last_hit_ax_raw = ax_raw;
-    referee_state.last_hit_dx = dx;
-    referee_state.hit_count++;
+    referee_state.hit_count += total_hits;
     tx_mutex_put(&referee_state_mutex);
 }
 
@@ -138,8 +133,6 @@ void referee_state_get_snapshot(referee_state_snapshot_t *snapshot)
         }
     }
     snapshot->last_hit_armor_id = referee_state.last_hit_armor_id;
-    snapshot->last_hit_ax_raw = referee_state.last_hit_ax_raw;
-    snapshot->last_hit_dx = referee_state.last_hit_dx;
     snapshot->hit_count = referee_state.hit_count;
     tx_mutex_put(&referee_state_mutex);
 }

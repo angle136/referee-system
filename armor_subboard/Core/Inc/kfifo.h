@@ -18,6 +18,5 @@ typedef struct
 void Kfifo_Init(Kfifo_t *fifo, void *buffer, size_t element_size, size_t capacity);
 bool Kfifo_Push(Kfifo_t *fifo, const void *element);
 bool Kfifo_Pop(Kfifo_t *fifo, void *element);
-size_t Kfifo_Count(const Kfifo_t *fifo);
 
 #endif

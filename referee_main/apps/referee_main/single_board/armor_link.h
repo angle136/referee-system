@@ -7,10 +7,11 @@
 typedef struct
 {
     uint8_t  armor_id;
-    uint8_t  event;
-    uint8_t  dx;
-    uint16_t ax_raw;
-    uint8_t  sequence;
+    uint16_t small_hit_count;
+    uint16_t big_hit_count;
+    uint8_t  reset_epoch;
+    uint8_t  reset_ack;
+    uint8_t  reset_sequence;
 } armor_link_packet_t;
 
 typedef void (*armor_link_packet_callback_t)(uint8_t port_id,
@@ -20,8 +21,11 @@ typedef struct
 {
     uint32_t packet_count;
     uint32_t checksum_error_count;
-    uint32_t duplicate_count;
-    uint32_t hit_count;
+    uint16_t small_hit_count;
+    uint16_t big_hit_count;
+    uint8_t  reset_epoch;
+    uint8_t  reset_ack;
+    uint8_t  reset_sequence;
 } armor_link_diagnostics_t;
 
 void armor_link_init(armor_link_packet_callback_t callback);

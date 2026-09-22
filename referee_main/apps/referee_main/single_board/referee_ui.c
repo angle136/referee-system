@@ -24,6 +24,32 @@ typedef struct
     ULONG changed_at;
 } ui_button_t;
 
+typedef enum
+{
+    UI_PAGE_HOME = 0U,
+    UI_PAGE_MAIN,
+    UI_PAGE_ARMOR,
+    UI_PAGE_PROTOCOL,
+    UI_PAGE_DEBUG,
+    UI_PAGE_SETTINGS,
+    UI_PAGE_COUNT
+} ui_page_t;
+
+typedef enum
+{
+    UI_CONFIRM_NONE = 0U,
+    UI_CONFIRM_TEAM,
+    UI_CONFIRM_RESET
+} ui_confirm_action_t;
+
+enum
+{
+    UI_CONFIRM_FOCUS_CANCEL = 0U,
+    UI_CONFIRM_FOCUS_OK,
+    UI_SETTINGS_ITEM_COUNT = 2U,
+    UI_HOME_ITEM_COUNT = UI_PAGE_COUNT - 1U
+};
+
 static TX_THREAD ui_thread;
 APPS_STACK_SECTION static uint8_t ui_thread_stack[REFEREE_MAIN_UI_STACK_SIZE];
 
@@ -33,12 +59,11 @@ static ui_button_t ui_key3;
 static ui_button_t ui_key4;
 static uint8_t ui_active;
 static uint8_t ui_display_ready;
-/* 0 = icon home, 1..4 = detail pages, 5 = settings menu. */
-static uint8_t ui_page;
+static ui_page_t ui_page;
 static uint8_t ui_home_selected;
 static uint8_t ui_armor_offset;
 static uint8_t ui_settings_selected;
-static uint8_t ui_confirm_action;
+static ui_confirm_action_t ui_confirm_action;
 static uint8_t ui_confirm_focus;
 static uint32_t ui_toast_until;
 static const char *ui_toast_text;
@@ -252,9 +277,8 @@ static void ui_text_main_large(int16_t x, int16_t y, const char *text)
     }
 }
 
-static void ui_u32_main_large(int16_t x, int16_t y, uint32_t value)
+static uint8_t ui_format_u32(char *digits, uint32_t value)
 {
-    char digits[11];
     uint8_t count = 0U;
     uint8_t i;
 
@@ -262,7 +286,7 @@ static void ui_u32_main_large(int16_t x, int16_t y, uint32_t value)
     {
         digits[count++] = (char)('0' + (value % 10U));
         value /= 10U;
-    } while (value != 0U && count < sizeof(digits) - 1U);
+    } while (value != 0U && count < 10U);
     for (i = 0U; i < count / 2U; ++i)
     {
         char swap = digits[i];
@@ -270,27 +294,23 @@ static void ui_u32_main_large(int16_t x, int16_t y, uint32_t value)
         digits[count - 1U - i] = swap;
     }
     digits[count] = '\0';
+    return count;
+}
+
+static void ui_u32_main_large(int16_t x, int16_t y, uint32_t value)
+{
+    char digits[11];
+
+    (void)ui_format_u32(digits, value);
     ui_text_main_large(x, y, digits);
 }
 
 static int16_t ui_u32_big(int16_t x, int16_t y, uint32_t value)
 {
     char digits[11];
-    uint8_t count = 0U;
-    uint8_t i;
+    uint8_t count;
 
-    do
-    {
-        digits[count++] = (char)('0' + (value % 10U));
-        value /= 10U;
-    } while (value != 0U && count < sizeof(digits) - 1U);
-    for (i = 0U; i < count / 2U; ++i)
-    {
-        char swap = digits[i];
-        digits[i] = digits[count - 1U - i];
-        digits[count - 1U - i] = swap;
-    }
-    digits[count] = '\0';
+    count = ui_format_u32(digits, value);
     /* A one-pixel bold pass keeps numbers readable while fitting the rows. */
     ui_text(x, y, digits);
     ui_text((int16_t)(x + 1), y, digits);
@@ -300,21 +320,9 @@ static int16_t ui_u32_big(int16_t x, int16_t y, uint32_t value)
 static int16_t ui_u32_xl(int16_t x, int16_t y, uint32_t value)
 {
     char digits[11];
-    uint8_t count = 0U;
-    uint8_t i;
+    uint8_t count;
 
-    do
-    {
-        digits[count++] = (char)('0' + (value % 10U));
-        value /= 10U;
-    } while (value != 0U && count < sizeof(digits) - 1U);
-    for (i = 0U; i < count / 2U; ++i)
-    {
-        char swap = digits[i];
-        digits[i] = digits[count - 1U - i];
-        digits[count - 1U - i] = swap;
-    }
-    digits[count] = '\0';
+    count = ui_format_u32(digits, value);
     ui_text_scaled(x, y, digits, 2U);
     return (int16_t)(x + count * 16U);
 }
@@ -387,7 +395,9 @@ static void ui_draw_armor(int16_t x)
         ui_text_large((int16_t)(x + 54), by, "R");
         ui_u32_fit((int16_t)(x + 72), (int16_t)(by + 4), diagnostics.packet_count, 94);
         ui_text_large((int16_t)(x + 96), by, "H");
-        ui_u32_fit((int16_t)(x + 114), (int16_t)(by + 4), diagnostics.hit_count, 127);
+        ui_u32_fit((int16_t)(x + 114), (int16_t)(by + 4),
+                   (uint32_t)diagnostics.small_hit_count +
+                   diagnostics.big_hit_count, 127);
         if (port == ui_armor_offset)
         {
             OLED_DrawHLine(x, 30, 128U);
@@ -414,7 +424,6 @@ static void ui_draw_debug(int16_t x)
 {
     uint8_t port;
     uint32_t crc = 0U;
-    uint32_t duplicate = 0U;
     referee_control_diagnostics_t control;
     referee_state_snapshot_t state;
 
@@ -423,16 +432,13 @@ static void ui_draw_debug(int16_t x)
         armor_link_diagnostics_t diagnostics;
         armor_link_get_diagnostics(port, &diagnostics);
         crc += diagnostics.checksum_error_count;
-        duplicate += diagnostics.duplicate_count;
     }
     referee_control_get_diagnostics(&control);
     referee_state_get_snapshot(&state);
     ui_text_bold((int16_t)(x + 2), 4, "CRC");
     ui_u32_fit((int16_t)(x + 34), 0, crc, 73);
-    ui_text_bold((int16_t)(x + 74), 4, "DUP");
-    ui_u32_big((int16_t)(x + 102), 2, duplicate);
-    ui_text_bold((int16_t)(x + 2), 22, "DROP");
-    ui_u32_fit((int16_t)(x + 42), 18, control.armor_event_drop_count, 127);
+    ui_text_bold((int16_t)(x + 74), 4, "SYNC");
+    ui_u32_big((int16_t)(x + 110), 2, control.armor_counter_resync_count);
     ui_text_bold((int16_t)(x + 2), 40, "LAST P");
     ui_u32_fit((int16_t)(x + 58), 36, state.last_hit_armor_id, 127);
 }
@@ -470,13 +476,17 @@ static void ui_draw_settings(int16_t x)
 {
     static const char *const items[] = {"TEAM", "RESET"};
 
-    ui_draw_menu_rows(x, items, 2U, ui_settings_selected, 0U);
+    ui_draw_menu_rows(x,
+                      items,
+                      UI_SETTINGS_ITEM_COUNT,
+                      ui_settings_selected,
+                      0U);
 }
 
 static void ui_draw_confirm(int16_t x)
 {
-    const char *title_line1 = ui_confirm_action == 1U ? "SWITCH" : "RESET";
-    const char *title_line2 = ui_confirm_action == 1U ? "TEAM?" : "SYSTEM?";
+    const char *title_line1 = ui_confirm_action == UI_CONFIRM_TEAM ? "SWITCH" : "RESET";
+    const char *title_line2 = ui_confirm_action == UI_CONFIRM_TEAM ? "TEAM?" : "SYSTEM?";
 
     OLED_SetDrawMode(OLED_DRAW_SET);
     OLED_DrawRBox((int16_t)(x + 2), 2, 124U, 60U, 4U);
@@ -491,7 +501,7 @@ static void ui_draw_confirm(int16_t x)
      * clear mode (black). Use two equal-width pixels on every edge and keep
      * the larger frame far enough from the enlarged glyphs. */
     OLED_SetDrawMode(OLED_DRAW_CLEAR);
-    if (ui_confirm_focus == 0U)
+    if (ui_confirm_focus == UI_CONFIRM_FOCUS_CANCEL)
     {
         OLED_DrawFrame((int16_t)(x + 8), 40, 80U, 22U);
         OLED_DrawFrame((int16_t)(x + 9), 41, 78U, 20U);
@@ -523,7 +533,11 @@ static void ui_draw_home(int16_t x)
     static const char *const labels[] = {"MAIN", "ARMOR", "PROTO", "DEBUG", "SET"};
     uint8_t first = ui_home_selected < 2U ? 0U : (uint8_t)(ui_home_selected - 1U);
 
-    ui_draw_menu_rows(x, labels, 5U, ui_home_selected, first);
+    ui_draw_menu_rows(x,
+                      labels,
+                      UI_HOME_ITEM_COUNT,
+                      ui_home_selected,
+                      first);
 }
 
 void KK_UI_CustomOnEnter(KK_UI_PageId page)
@@ -540,87 +554,89 @@ void KK_UI_CustomOnLeave(KK_UI_PageId page)
 void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
 {
     (void)page;
-    if (ui_confirm_action != 0U)
+    if (ui_confirm_action != UI_CONFIRM_NONE)
     {
         if (event.action == KK_UI_INPUT_UP || event.action == KK_UI_INPUT_DOWN)
         {
-            ui_confirm_focus = (uint8_t)(ui_confirm_focus == 0U ? 1U : 0U);
+            ui_confirm_focus = (uint8_t)(ui_confirm_focus == UI_CONFIRM_FOCUS_CANCEL
+                                             ? UI_CONFIRM_FOCUS_OK
+                                             : UI_CONFIRM_FOCUS_CANCEL);
             KK_UI_Invalidate();
         }
         else if (event.action == KK_UI_INPUT_OK)
         {
-            if (ui_confirm_focus != 0U)
+            if (ui_confirm_focus == UI_CONFIRM_FOCUS_OK)
             {
-                if (ui_confirm_action == 1U)
+                if (ui_confirm_action == UI_CONFIRM_TEAM)
                 {
-                    referee_state_toggle_team();
-                    referee_control_refresh_led();
+                    referee_control_toggle_team();
                     ui_toast_text = "TEAM OK";
                 }
                 else
                 {
-                    referee_state_reset();
-                    referee_control_refresh_led();
+                    referee_control_reset_system();
                     ui_toast_text = "RESET OK";
                 }
                 ui_toast_until = tx_time_get() + 1500U;
             }
-            ui_confirm_action = 0U;
+            ui_confirm_action = UI_CONFIRM_NONE;
             KK_UI_Invalidate();
         }
     }
-    else if (ui_page == 5U && event.action == KK_UI_INPUT_UP)
+    else if (ui_page == UI_PAGE_SETTINGS &&
+             (event.action == KK_UI_INPUT_UP ||
+              event.action == KK_UI_INPUT_DOWN))
     {
-        ui_settings_selected = (uint8_t)((ui_settings_selected + 1U) % 2U);
+        ui_settings_selected =
+            (uint8_t)((ui_settings_selected + 1U) % UI_SETTINGS_ITEM_COUNT);
         KK_UI_Invalidate();
     }
-    else if (ui_page == 5U && event.action == KK_UI_INPUT_DOWN)
+    else if (ui_page == UI_PAGE_SETTINGS && event.action == KK_UI_INPUT_OK)
     {
-        ui_settings_selected = (uint8_t)((ui_settings_selected + 1U) % 2U);
+        ui_confirm_action = (ui_confirm_action_t)(ui_settings_selected +
+                                                  UI_CONFIRM_TEAM);
+        ui_confirm_focus = UI_CONFIRM_FOCUS_CANCEL;
         KK_UI_Invalidate();
     }
-    else if (ui_page == 5U && event.action == KK_UI_INPUT_OK)
-    {
-        ui_confirm_action = (uint8_t)(ui_settings_selected + 1U);
-        ui_confirm_focus = 0U;
-        KK_UI_Invalidate();
-    }
-    else if (ui_page == 2U && event.action == KK_UI_INPUT_UP)
+    else if (ui_page == UI_PAGE_ARMOR && event.action == KK_UI_INPUT_UP)
     {
         ui_armor_offset = 0U;
         KK_UI_Invalidate();
     }
-    else if (ui_page == 2U && event.action == KK_UI_INPUT_DOWN)
+    else if (ui_page == UI_PAGE_ARMOR && event.action == KK_UI_INPUT_DOWN)
     {
         ui_armor_offset = 2U;
         KK_UI_Invalidate();
     }
-    else if (ui_page == 0U && event.action == KK_UI_INPUT_UP)
+    else if (ui_page == UI_PAGE_HOME && event.action == KK_UI_INPUT_UP)
     {
-        ui_home_selected = (uint8_t)((ui_home_selected + 4U) % 5U);
+        ui_home_selected =
+            (uint8_t)((ui_home_selected + UI_HOME_ITEM_COUNT - 1U) %
+                      UI_HOME_ITEM_COUNT);
         KK_UI_Invalidate();
     }
-    else if (ui_page == 0U && event.action == KK_UI_INPUT_DOWN)
+    else if (ui_page == UI_PAGE_HOME && event.action == KK_UI_INPUT_DOWN)
     {
-        ui_home_selected = (uint8_t)((ui_home_selected + 1U) % 5U);
+        ui_home_selected =
+            (uint8_t)((ui_home_selected + 1U) % UI_HOME_ITEM_COUNT);
         KK_UI_Invalidate();
     }
-    else if (ui_page == 0U && event.action == KK_UI_INPUT_OK)
+    else if (ui_page == UI_PAGE_HOME && event.action == KK_UI_INPUT_OK)
     {
-        ui_page = (uint8_t)(ui_home_selected + 1U);
-        if (ui_page == 2U)
+        ui_page = (ui_page_t)(ui_home_selected + UI_PAGE_MAIN);
+        if (ui_page == UI_PAGE_ARMOR)
         {
             ui_armor_offset = 0U;
         }
-        if (ui_page == 5U)
+        if (ui_page == UI_PAGE_SETTINGS)
         {
             ui_settings_selected = 0U;
         }
         KK_UI_Invalidate();
     }
-    else if (ui_page != 0U && event.action == KK_UI_INPUT_OK)
+    else if (ui_page != UI_PAGE_HOME && event.action == KK_UI_INPUT_OK)
     {
-        ui_page = 0U;
+        ui_page = UI_PAGE_HOME;
         KK_UI_Invalidate();
     }
 }
@@ -651,18 +667,19 @@ void KK_UI_CustomOnDraw(KK_UI_PageId page, int16_t x_offset,
     OLED_SetClipWindow(clip_x, 0, clip_width, 64U);
     switch (ui_page)
     {
-    case 0U: ui_draw_home(x_offset); break;
-    case 1U: ui_draw_main(x_offset); break;
-    case 2U: ui_draw_armor(x_offset); break;
-    case 3U: ui_draw_protocol(x_offset); break;
-    case 5U: ui_draw_settings(x_offset); break;
-    default: ui_draw_debug(x_offset); break;
+    case UI_PAGE_HOME: ui_draw_home(x_offset); break;
+    case UI_PAGE_MAIN: ui_draw_main(x_offset); break;
+    case UI_PAGE_ARMOR: ui_draw_armor(x_offset); break;
+    case UI_PAGE_PROTOCOL: ui_draw_protocol(x_offset); break;
+    case UI_PAGE_DEBUG: ui_draw_debug(x_offset); break;
+    case UI_PAGE_SETTINGS: ui_draw_settings(x_offset); break;
+    default: ui_page = UI_PAGE_HOME; break;
     }
-    if (ui_confirm_action != 0U)
+    if (ui_confirm_action != UI_CONFIRM_NONE)
     {
         ui_draw_confirm(x_offset);
     }
-    else if (ui_page == 5U)
+    else if (ui_page == UI_PAGE_SETTINGS)
     {
         ui_draw_toast(x_offset);
     }
@@ -692,12 +709,12 @@ static UINT ui_display_start(void)
     }
     (void)OLED_SetPowerSave(false);
     ui_active = 1U;
-    ui_page = 0U;
+    ui_page = UI_PAGE_HOME;
     ui_home_selected = 0U;
     ui_armor_offset = 0U;
     ui_settings_selected = 0U;
-    ui_confirm_action = 0U;
-    ui_confirm_focus = 0U;
+    ui_confirm_action = UI_CONFIRM_NONE;
+    ui_confirm_focus = UI_CONFIRM_FOCUS_CANCEL;
     ui_toast_until = 0U;
     ui_toast_text = 0;
     KK_UI_Invalidate();
@@ -730,47 +747,55 @@ static void ui_thread_entry(ULONG argument)
         uint8_t key2;
         uint8_t key3;
         uint8_t key4;
+        uint8_t key1_pressed;
+        uint8_t key2_pressed;
+        uint8_t key3_pressed;
+        uint8_t key4_pressed;
 
         now = tx_time_get();
         key1 = ui_read_pressed(KEY_1_GPIO_Port, KEY_1_Pin);
         key2 = ui_read_pressed(KEY_2_GPIO_Port, KEY_2_Pin);
         key3 = ui_read_pressed(KEY_3_GPIO_Port, KEY_3_Pin);
         key4 = ui_read_pressed(KEY_4_GPIO_Port, KEY_4_Pin);
+        /* Keep the outer debouncers synchronized even while KK_UI owns
+         * KEY1..KEY3. Otherwise leaving the UI can replay a stale press as a
+         * team change or system reset. */
+        key1_pressed = ui_button_press(&ui_key1, key1, now);
+        key2_pressed = ui_button_press(&ui_key2, key2, now);
+        key3_pressed = ui_button_press(&ui_key3, key3, now);
+        key4_pressed = ui_button_press(&ui_key4, key4, now);
 
         if (!ui_active)
         {
-            if (ui_button_press(&ui_key1, key1, now) != 0U)
+            if (key1_pressed != 0U)
             {
-                referee_state_toggle_team();
-                referee_control_refresh_led();
+                referee_control_toggle_team();
             }
-            if (ui_button_press(&ui_key2, key2, now) != 0U)
+            if (key2_pressed != 0U)
             {
-                referee_state_reset();
-                referee_control_refresh_led();
+                referee_control_reset_system();
             }
-            if (ui_button_press(&ui_key3, key3, now) != 0U ||
-                ui_button_press(&ui_key4, key4, now) != 0U)
+            if (key3_pressed != 0U || key4_pressed != 0U)
             {
                 (void)ui_display_start();
             }
         }
         else
         {
-            if (ui_button_press(&ui_key4, key4, now) != 0U)
+            if (key4_pressed != 0U)
             {
-                /* K4 is the global UI-exit key only on the icon home.  Once
+                /* K4 is the global UI-exit key only on the home list. Once
                  * inside an application page it behaves as a back key; in a
                  * confirmation dialog it first cancels that dialog. */
-                if (ui_confirm_action != 0U)
+                if (ui_confirm_action != UI_CONFIRM_NONE)
                 {
-                    ui_confirm_action = 0U;
-                    ui_confirm_focus = 0U;
+                    ui_confirm_action = UI_CONFIRM_NONE;
+                    ui_confirm_focus = UI_CONFIRM_FOCUS_CANCEL;
                     KK_UI_Invalidate();
                 }
-                else if (ui_page != 0U)
+                else if (ui_page != UI_PAGE_HOME)
                 {
-                    ui_page = 0U;
+                    ui_page = UI_PAGE_HOME;
                     KK_UI_Invalidate();
                 }
                 else
