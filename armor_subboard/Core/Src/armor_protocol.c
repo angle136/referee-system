@@ -4,7 +4,6 @@
 #include "main.h"
 #include "usart.h"
 
-static uint8_t armor_protocol_seq;
 static uint8_t armor_protocol_armor_id;
 static Kfifo_t armor_tx_fifo;
 static uint8_t armor_tx_storage[ARMOR_TX_QUEUE_CAPACITY][ARMOR_PACKET_SIZE];
@@ -33,7 +32,6 @@ void ArmorProtocol_Init(void)
              armor_tx_storage,
              ARMOR_PACKET_SIZE,
              ARMOR_TX_QUEUE_CAPACITY);
-  armor_protocol_seq = 0U;
   armor_protocol_armor_id = ARMOR_ID;
   armor_tx_active = false;
 }
@@ -43,27 +41,41 @@ void ArmorProtocol_SetArmorId(uint8_t armor_id)
   armor_protocol_armor_id = armor_id;
 }
 
-void ArmorProtocol_Send(uint8_t event, uint32_t adc_raw, uint8_t dx_level)
+void ArmorProtocol_SendStatus(uint16_t small_hit_count,
+                              uint16_t big_hit_count,
+                              uint8_t reset_epoch,
+                              bool reset_ack,
+                              uint8_t reset_sequence)
 {
   uint8_t packet[ARMOR_PACKET_SIZE];
   uint8_t sum = 0U;
+  uint32_t primask;
 
   packet[0] = 0xA5U;
-  packet[1] = armor_protocol_armor_id;
-  packet[2] = event;
-  packet[3] = dx_level;
-  packet[4] = (uint8_t)(adc_raw & 0xFFU);
-  packet[5] = (uint8_t)((adc_raw >> 8) & 0xFFU);
-  packet[6] = armor_protocol_seq++;
+  packet[1] = (uint8_t)(armor_protocol_armor_id & ARMOR_STATUS_ARMOR_ID_MASK);
+  if (reset_ack)
+  {
+    packet[1] = (uint8_t)(reset_sequence & ARMOR_STATUS_ARMOR_ID_MASK);
+    packet[1] |= ARMOR_STATUS_RESET_ACK;
+  }
+  packet[2] = (uint8_t)(small_hit_count & 0xFFU);
+  packet[3] = (uint8_t)(small_hit_count >> 8U);
+  packet[4] = (uint8_t)(big_hit_count & 0xFFU);
+  packet[5] = (uint8_t)(big_hit_count >> 8U);
+  packet[6] = reset_epoch;
   for (uint32_t i = 0U; i < ARMOR_PACKET_SIZE - 1U; i++)
   {
     sum = (uint8_t)(sum + packet[i]);
   }
   packet[7] = sum;
+  primask = __get_PRIMASK();
   __disable_irq();
   (void)Kfifo_Push(&armor_tx_fifo, packet);
   ArmorProtocol_StartNext();
-  __enable_irq();
+  if (primask == 0U)
+  {
+    __enable_irq();
+  }
 }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)

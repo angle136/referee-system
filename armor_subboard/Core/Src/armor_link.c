@@ -24,6 +24,12 @@ static uint8_t armor_transition_phase;
 static uint32_t armor_transition_next_tick;
 static bool armor_key_red_latched;
 static bool armor_key_blue_latched;
+static bool armor_counter_reset_pending;
+static bool armor_counter_reset_command_active;
+static bool armor_counter_reset_ack_active;
+static uint8_t armor_counter_reset_epoch;
+static uint8_t armor_counter_reset_sequence;
+static uint8_t armor_applied_reset_epoch;
 
 static bool ArmorLink_FrameValid(const uint8_t *frame)
 {
@@ -33,7 +39,9 @@ static bool ArmorLink_FrameValid(const uint8_t *frame)
       frame[1] != ARMOR_LINK_CMD_CONFIG ||
       frame[2] > ARMOR_TEAM_BLUE ||
       frame[3] > ARMOR_MAX_ID ||
-      frame[4] != 1U)
+      (frame[4] & ARMOR_LINK_MODE_ENABLE) == 0U ||
+      (frame[4] & (uint8_t)~(ARMOR_LINK_MODE_ENABLE |
+                            ARMOR_LINK_MODE_RESET_COUNTERS)) != 0U)
   {
     return false;
   }
@@ -49,6 +57,26 @@ static void ArmorLink_HandleFrame(const uint8_t *frame, uint32_t now)
 {
   armor_team = frame[2];
   ArmorProtocol_SetArmorId(frame[3]);
+  if ((frame[4] & ARMOR_LINK_MODE_RESET_COUNTERS) == 0U)
+  {
+    armor_counter_reset_command_active = false;
+    armor_counter_reset_ack_active = false;
+  }
+  else if (!armor_counter_reset_command_active ||
+           frame[5] != armor_applied_reset_epoch)
+  {
+    armor_counter_reset_epoch = frame[5];
+    armor_counter_reset_sequence = frame[6];
+    armor_counter_reset_pending = true;
+    armor_counter_reset_command_active = true;
+  }
+  else
+  {
+    /* A pending reset may be retransmitted with a new config sequence if the
+     * previous ACK was lost. Refresh the sequence echoed by status frames,
+     * but do not clear counters a second time for the same epoch. */
+    armor_counter_reset_sequence = frame[6];
+  }
   armor_last_master_tick = now;
   armor_online = true;
   armor_transitioning = false;
@@ -57,6 +85,8 @@ static void ArmorLink_HandleFrame(const uint8_t *frame, uint32_t now)
 
 static void ArmorLink_ParseByte(uint8_t byte, uint32_t now)
 {
+  bool frame_valid;
+
   if (armor_parser.length == 0U)
   {
     if (byte == 0xA5U)
@@ -73,12 +103,16 @@ static void ArmorLink_ParseByte(uint8_t byte, uint32_t now)
     return;
   }
 
-  if (ArmorLink_FrameValid(armor_parser.frame))
+  frame_valid = ArmorLink_FrameValid(armor_parser.frame);
+  if (frame_valid)
   {
     ArmorLink_HandleFrame(armor_parser.frame, now);
   }
   armor_parser.length = 0U;
-  if (byte == 0xA5U)
+  /* Only reuse the last byte as a possible SOF after a corrupt frame.  A
+     valid frame checksum is allowed to equal 0xA5; treating that checksum as
+     the next SOF would consume and lose the following complete frame. */
+  if (!frame_valid && byte == 0xA5U)
   {
     armor_parser.frame[0] = byte;
     armor_parser.length = 1U;
@@ -148,22 +182,36 @@ void ArmorLink_Init(void)
   armor_transition_next_tick = now;
   armor_key_red_latched = false;
   armor_key_blue_latched = false;
+  armor_counter_reset_pending = false;
+  armor_counter_reset_command_active = false;
+  armor_counter_reset_ack_active = false;
+  armor_counter_reset_epoch = 0U;
+  armor_counter_reset_sequence = 0U;
+  armor_applied_reset_epoch = 0U;
   (void)HAL_UART_Receive_IT(&huart2, &armor_rx_byte, 1U);
 }
 
 void ArmorLink_Process(uint32_t now)
 {
   uint8_t byte;
+  uint32_t primask;
 
   while (1)
   {
+    primask = __get_PRIMASK();
     __disable_irq();
     if (!Kfifo_Pop(&armor_rx_fifo, &byte))
     {
-      __enable_irq();
+      if (primask == 0U)
+      {
+        __enable_irq();
+      }
       break;
     }
-    __enable_irq();
+    if (primask == 0U)
+    {
+      __enable_irq();
+    }
     ArmorLink_ParseByte(byte, now);
   }
 
@@ -207,6 +255,27 @@ bool ArmorLink_TransitionRedOn(void)
 uint8_t ArmorLink_GetTeam(void)
 {
   return armor_team;
+}
+
+bool ArmorLink_TakeCounterReset(uint8_t *reset_epoch, uint8_t *reset_sequence)
+{
+  if (!armor_counter_reset_pending || reset_epoch == NULL ||
+      reset_sequence == NULL)
+  {
+    return false;
+  }
+
+  *reset_epoch = armor_counter_reset_epoch;
+  *reset_sequence = armor_counter_reset_sequence;
+  armor_applied_reset_epoch = armor_counter_reset_epoch;
+  armor_counter_reset_pending = false;
+  armor_counter_reset_ack_active = true;
+  return true;
+}
+
+bool ArmorLink_IsCounterResetAckActive(void)
+{
+  return armor_counter_reset_ack_active;
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)

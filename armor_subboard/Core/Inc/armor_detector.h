@@ -6,10 +6,16 @@
 
 #include "armor_config.h"
 
+typedef enum
+{
+  ARMOR_HIT_NONE = 0,
+  ARMOR_HIT_SMALL,
+  ARMOR_HIT_BIG
+} ArmorHitType_t;
+
 typedef struct
 {
   uint32_t baseline;
-  uint8_t event;
   bool baseline_ready;
   uint16_t baseline_samples[ARMOR_BASELINE_SAMPLES];
   uint32_t baseline_sum;
@@ -18,13 +24,12 @@ typedef struct
   uint32_t baseline_start;
   uint32_t last_hit_tick;
   bool dx_was_active;
-  bool ax_was_high;
 } ArmorDetectorState_t;
 
 void ArmorDetector_Init(ArmorDetectorState_t *state, uint32_t now);
-uint8_t ArmorDetector_Update(ArmorDetectorState_t *state,
-                             uint32_t now,
-                             uint32_t adc_raw,
-                             uint8_t dx_level);
+ArmorHitType_t ArmorDetector_Update(ArmorDetectorState_t *state,
+                                   uint32_t now,
+                                   uint32_t adc_raw,
+                                   uint8_t dx_level);
 
 #endif

@@ -40,8 +40,3 @@ bool Kfifo_Pop(Kfifo_t *fifo, void *element)
   fifo->count--;
   return true;
 }
-
-size_t Kfifo_Count(const Kfifo_t *fifo)
-{
-  return fifo->count;
-}

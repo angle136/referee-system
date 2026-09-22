@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "armor_counter.h"
 #include "armor_link.h"
 #include "bsp_def.h"
 #include "bsp_uart.h"
@@ -21,29 +22,17 @@
 
 #define REFEREE_MAIN_THREAD_STACK_SIZE 1024U
 
-enum
-{
-    ARMOR_EVENT_WORD_ARMOR_ID = 0,
-    ARMOR_EVENT_WORD_EVENT,
-    ARMOR_EVENT_WORD_DX,
-    ARMOR_EVENT_WORD_AX_RAW
-};
-
 static TX_THREAD referee_tx_thread;
 static TX_THREAD armor_rx_thread;
-static TX_THREAD hit_event_thread;
 static TX_THREAD referee_watchdog_thread;
 
 APPS_STACK_SECTION static uint8_t referee_tx_thread_stack[REFEREE_MAIN_THREAD_STACK_SIZE];
 APPS_STACK_SECTION static uint8_t armor_rx_thread_stack[REFEREE_MAIN_THREAD_STACK_SIZE];
-APPS_STACK_SECTION static uint8_t hit_event_thread_stack[REFEREE_MAIN_THREAD_STACK_SIZE];
 APPS_STACK_SECTION static uint8_t referee_watchdog_thread_stack[
     REFEREE_MAIN_WATCHDOG_STACK_SIZE];
 
-static TX_QUEUE armor_event_queue;
-static ULONG    armor_event_queue_storage[REFEREE_MAIN_ARMOR_EVENT_QUEUE_LENGTH *
-                                          REFEREE_MAIN_ARMOR_EVENT_WORDS];
 static TX_MUTEX referee_tx_mutex;
+static TX_MUTEX armor_counter_mutex;
 
 static UART_Device *referee_uart;
 static UART_Device *armor_uart[REFEREE_MAIN_ARMOR_COUNT];
@@ -51,11 +40,11 @@ static uint8_t      armor_rx_buffer[REFEREE_MAIN_ARMOR_COUNT][REFEREE_MAIN_ARMOR
     BUFFER_SECTION;
 static uint8_t referee_sequence;
 static uint8_t armor_config_sequence;
+static armor_counter_manager_t armor_counters;
 static volatile uint32_t referee_tx_count;
 static volatile uint32_t referee_tx_error_count;
 static volatile uint32_t armor_config_tx_count;
 static volatile uint32_t armor_config_tx_error_count;
-static volatile uint32_t armor_event_drop_count;
 static volatile uint16_t referee_last_command_id;
 
 static int referee_send_frame(uint16_t command_id, const void *payload, uint16_t payload_length)
@@ -192,15 +181,34 @@ static void referee_send_armor_config(void)
     for (uint8_t port_id = 0; port_id < REFEREE_MAIN_ARMOR_COUNT; port_id++)
     {
         uint8_t frame[REFEREE_MAIN_ARMOR_CONFIG_SIZE] = {0};
+        uint8_t mode = REFEREE_MAIN_ARMOR_MODE_ENABLE;
+        uint8_t reset_epoch;
+        uint8_t reset_pending;
         uint8_t sum = 0U;
+
+        tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
+        reset_pending = armor_counter_get_reset_request(&armor_counters,
+                                                        port_id,
+                                                        &reset_epoch);
+        if (reset_pending != 0U)
+        {
+            mode |= REFEREE_MAIN_ARMOR_MODE_RESET_COUNTERS;
+        }
+        tx_mutex_put(&armor_counter_mutex);
 
         frame[0] = REFEREE_SOF;
         frame[1] = REFEREE_MAIN_ARMOR_CONFIG_CMD;
         frame[2] = snapshot.team;
         frame[3] = port_id;
-        frame[4] = 1U;
-        frame[5] = 0U;
+        frame[4] = mode;
+        frame[5] = reset_epoch;
         frame[6] = armor_config_sequence++;
+        if (reset_pending != 0U)
+        {
+            tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
+            armor_counter_mark_reset_sent(&armor_counters, port_id, frame[6]);
+            tx_mutex_put(&armor_counter_mutex);
+        }
         for (uint8_t index = 0; index < REFEREE_MAIN_ARMOR_CONFIG_SIZE - 1U; index++)
         {
             sum = (uint8_t)(sum + frame[index]);
@@ -223,35 +231,45 @@ static void referee_send_armor_config(void)
 
 static void armor_packet_received(uint8_t port_id, const armor_link_packet_t *packet)
 {
-    ULONG event[REFEREE_MAIN_ARMOR_EVENT_WORDS] = {0};
+    armor_counter_delta_t delta;
+    armor_counter_result_t result;
 
     if (packet == 0 || port_id >= REFEREE_MAIN_ARMOR_COUNT)
     {
         return;
     }
 
-    if (packet->event != REFEREE_MAIN_ARMOR_EVENT_HEARTBEAT &&
-        (packet->event < REFEREE_MAIN_ARMOR_EVENT_HIT_DX ||
-        packet->event > REFEREE_MAIN_ARMOR_EVENT_HIT_BOTH)
-    )
+    tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
+    result = armor_counter_update(&armor_counters,
+                                  port_id,
+                                  packet->small_hit_count,
+                                  packet->big_hit_count,
+                                  packet->reset_epoch,
+                                  packet->reset_ack != 0U,
+                                  packet->reset_sequence,
+                                  &delta);
+    if (result == ARMOR_COUNTER_HIT)
     {
-        return;
+        referee_state_apply_hits(port_id,
+                                 delta.small_hit_delta,
+                                 delta.big_hit_delta);
     }
-
-    referee_state_mark_armor_seen(port_id, packet->ax_raw, packet->dx);
-    if (packet->event == REFEREE_MAIN_ARMOR_EVENT_HEARTBEAT)
+    else
     {
-        return;
+        referee_state_mark_armor_seen(port_id);
     }
+    tx_mutex_put(&armor_counter_mutex);
 
-    event[ARMOR_EVENT_WORD_ARMOR_ID] = port_id;
-    event[ARMOR_EVENT_WORD_EVENT] = packet->event;
-    event[ARMOR_EVENT_WORD_DX] = packet->dx;
-    event[ARMOR_EVENT_WORD_AX_RAW] = packet->ax_raw;
-    if (tx_queue_send(&armor_event_queue, event, TX_NO_WAIT) != TX_SUCCESS)
+    if (result == ARMOR_COUNTER_HIT)
     {
-        armor_event_drop_count++;
-        LOG_W("armor event queue full");
+        referee_state_snapshot_t snapshot;
+        referee_send_hurt_status(port_id);
+        referee_state_get_snapshot(&snapshot);
+        LOG_I("armor hit: port=%u small=%u big=%u hp=%u",
+              (unsigned int)port_id,
+              (unsigned int)delta.small_hit_delta,
+              (unsigned int)delta.big_hit_delta,
+              (unsigned int)snapshot.current_hp);
     }
 }
 
@@ -286,34 +304,6 @@ static void armor_rx_thread_entry(ULONG thread_input)
     }
 }
 
-static void hit_event_thread_entry(ULONG thread_input)
-{
-    ULONG message[REFEREE_MAIN_ARMOR_EVENT_WORDS];
-
-    (void)thread_input;
-    while (1)
-    {
-        referee_state_snapshot_t snapshot;
-
-        if (tx_queue_receive(&armor_event_queue, message, TX_WAIT_FOREVER) != TX_SUCCESS)
-        {
-            continue;
-        }
-
-        referee_state_apply_hit((uint8_t)message[ARMOR_EVENT_WORD_ARMOR_ID],
-                                (uint16_t)message[ARMOR_EVENT_WORD_AX_RAW],
-                                (uint8_t)message[ARMOR_EVENT_WORD_DX]);
-        referee_send_hurt_status((uint8_t)message[ARMOR_EVENT_WORD_ARMOR_ID]);
-        referee_state_get_snapshot(&snapshot);
-        LOG_I("armor hit: id=%lu event=%lu ax=%lu dx=%lu hp=%u",
-              (unsigned long)message[ARMOR_EVENT_WORD_ARMOR_ID],
-              (unsigned long)message[ARMOR_EVENT_WORD_EVENT],
-              (unsigned long)message[ARMOR_EVENT_WORD_AX_RAW],
-              (unsigned long)message[ARMOR_EVENT_WORD_DX],
-              (unsigned int)snapshot.current_hp);
-    }
-}
-
 static uint8_t referee_time_reached(ULONG now, ULONG deadline)
 {
     return (int32_t)(now - deadline) >= 0;
@@ -339,12 +329,27 @@ static void referee_led_apply_team(uint8_t team)
 #endif
 }
 
-void referee_control_refresh_led(void)
+static void referee_control_refresh_led(void)
 {
     referee_state_snapshot_t snapshot;
 
     referee_state_get_snapshot(&snapshot);
     referee_led_apply_team(snapshot.team);
+}
+
+void referee_control_toggle_team(void)
+{
+    referee_state_toggle_team();
+    referee_control_refresh_led();
+}
+
+void referee_control_reset_system(void)
+{
+    tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
+    armor_counter_request_reset(&armor_counters);
+    referee_state_reset();
+    tx_mutex_put(&armor_counter_mutex);
+    referee_control_refresh_led();
 }
 
 static void referee_watchdog_thread_entry(ULONG thread_input)
@@ -400,7 +405,7 @@ static void referee_tx_thread_entry(ULONG thread_input)
             next_game += REFEREE_MAIN_GAME_PERIOD_MS;
         }
 
-        tx_thread_sleep(REFEREE_MAIN_KEY_POLL_PERIOD_MS);
+        tx_thread_sleep(REFEREE_MAIN_TX_THREAD_PERIOD_MS);
     }
 }
 
@@ -453,22 +458,7 @@ void robot_control_init(void)
     UINT status;
 
     __HAL_DBGMCU_FREEZE_IWDG();
-
-    status = tx_thread_create(&referee_watchdog_thread,
-                              "referee_watchdog",
-                              referee_watchdog_thread_entry,
-                              0,
-                              referee_watchdog_thread_stack,
-                              sizeof(referee_watchdog_thread_stack),
-                              5,
-                              5,
-                              TX_NO_TIME_SLICE,
-                              TX_AUTO_START);
-    if (status != TX_SUCCESS)
-    {
-        LOG_E("referee watchdog thread create failed: %u", status);
-        return;
-    }
+    HAL_IWDG_Refresh(&hiwdg);
 
     if (referee_state_init() != 0)
     {
@@ -485,16 +475,14 @@ void robot_control_init(void)
         return;
     }
 
-    status = tx_queue_create(&armor_event_queue,
-                             "armor_event_queue",
-                             REFEREE_MAIN_ARMOR_EVENT_WORDS,
-                             armor_event_queue_storage,
-                             sizeof(armor_event_queue_storage));
+    status = tx_mutex_create(&armor_counter_mutex, "armor_counter", TX_INHERIT);
     if (status != TX_SUCCESS)
     {
-        LOG_E("armor event queue create failed: %u", status);
+        LOG_E("armor counter mutex create failed: %u", status);
         return;
     }
+
+    armor_counter_init(&armor_counters);
 
     armor_link_init(armor_packet_received);
     if (referee_uart_init() != 0)
@@ -502,6 +490,7 @@ void robot_control_init(void)
         LOG_E("referee uart init failed");
         return;
     }
+    HAL_IWDG_Refresh(&hiwdg);
 
     status = tx_thread_create(&armor_rx_thread,
                               "armor_rx_thread",
@@ -516,22 +505,6 @@ void robot_control_init(void)
     if (status != TX_SUCCESS)
     {
         LOG_E("armor rx thread create failed: %u", status);
-        return;
-    }
-
-    status = tx_thread_create(&hit_event_thread,
-                              "hit_event_thread",
-                              hit_event_thread_entry,
-                              0,
-                              hit_event_thread_stack,
-                              sizeof(hit_event_thread_stack),
-                              10,
-                              10,
-                              TX_NO_TIME_SLICE,
-                              TX_AUTO_START);
-    if (status != TX_SUCCESS)
-    {
-        LOG_E("hit event thread create failed: %u", status);
         return;
     }
 
@@ -555,6 +528,23 @@ void robot_control_init(void)
     if (status != TX_SUCCESS)
     {
         LOG_E("referee ui init failed: %u", status);
+        return;
+    }
+
+    status = tx_thread_create(&referee_watchdog_thread,
+                              "referee_watchdog",
+                              referee_watchdog_thread_entry,
+                              0,
+                              referee_watchdog_thread_stack,
+                              sizeof(referee_watchdog_thread_stack),
+                              5,
+                              5,
+                              TX_NO_TIME_SLICE,
+                              TX_AUTO_START);
+    if (status != TX_SUCCESS)
+    {
+        LOG_E("referee watchdog thread create failed: %u", status);
+        return;
     }
 
     LOG_I("referee controller started");
@@ -571,6 +561,9 @@ void referee_control_get_diagnostics(referee_control_diagnostics_t *diagnostics)
     diagnostics->referee_tx_error_count = referee_tx_error_count;
     diagnostics->armor_config_tx_count = armor_config_tx_count;
     diagnostics->armor_config_tx_error_count = armor_config_tx_error_count;
-    diagnostics->armor_event_drop_count = armor_event_drop_count;
+    tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
+    diagnostics->armor_counter_resync_count =
+        armor_counter_get_resync_count(&armor_counters);
+    tx_mutex_put(&armor_counter_mutex);
     diagnostics->last_command_id = referee_last_command_id;
 }
