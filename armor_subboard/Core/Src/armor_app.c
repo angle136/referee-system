@@ -18,6 +18,7 @@ static bool armor_led_hit_active;
 static uint16_t armor_adc_history[ARMOR_ADC_HISTORY_COUNT];
 static uint8_t armor_adc_history_count;
 static uint8_t armor_adc_history_write_index;
+static bool armor_adc_debug_was_active;
 
 static void ArmorApp_RecordAdc(uint16_t adc_raw)
 {
@@ -73,6 +74,7 @@ void ArmorApp_Init(void)
   }
   armor_adc_history_count = 0U;
   armor_adc_history_write_index = 0U;
+  armor_adc_debug_was_active = false;
 }
 
 void ArmorApp_RunOnce(void)
@@ -85,6 +87,12 @@ void ArmorApp_RunOnce(void)
   ArmorHitType_t hit_type;
 
   ArmorLink_Process(now);
+  if (ArmorLink_IsAdcDebugActive() && !armor_adc_debug_was_active)
+  {
+    armor_adc_history_count = 0U;
+    armor_adc_history_write_index = 0U;
+  }
+  armor_adc_debug_was_active = ArmorLink_IsAdcDebugActive();
   if (ArmorLink_TakeCounterReset(&reset_epoch, &reset_sequence))
   {
     armor_small_hit_count = 0U;
@@ -110,16 +118,16 @@ void ArmorApp_RunOnce(void)
     {
       ArmorApp_RecordAdc((uint16_t)adc_raw);
     }
-    if (hit_type == ARMOR_HIT_BIG)
-    {
-      armor_big_hit_count++;
-    }
-    else
-    {
-      armor_small_hit_count++;
-    }
     if (!ArmorLink_IsAdcDebugActive())
     {
+      if (hit_type == ARMOR_HIT_BIG)
+      {
+        armor_big_hit_count++;
+      }
+      else
+      {
+        armor_small_hit_count++;
+      }
       ArmorProtocol_SendStatus(armor_small_hit_count,
                                armor_big_hit_count,
                                armor_reset_epoch,

@@ -6,12 +6,13 @@
 #include "armor_link.h"
 
 static unsigned callback_count;
+static uint8_t last_port;
 static armor_link_packet_t last_packet;
 
 static void on_packet(uint8_t port_id, const armor_link_packet_t *packet)
 {
-    assert(port_id == 0U);
     assert(packet != 0);
+    last_port = port_id;
     callback_count++;
     last_packet = *packet;
 }
@@ -85,7 +86,7 @@ int main(void)
         const uint16_t samples[4] = {100U, 2048U, 3000U, 4095U};
         uint8_t debug_frame[11];
         make_debug_frame(debug_frame, samples);
-        armor_link_set_debug_mode(1U);
+        armor_link_set_debug_mode_port(0U, 1U);
         armor_link_process(0U, debug_frame, sizeof(debug_frame));
         assert(callback_count == 3U);
         assert(last_packet.frame_type == 0xD1U);
@@ -96,7 +97,18 @@ int main(void)
         armor_link_get_diagnostics(0U, &diagnostics);
         assert(diagnostics.adc_debug != 0U);
         assert(diagnostics.adc_samples[3] == 4095U);
-        armor_link_set_debug_mode(0U);
+        armor_link_set_debug_mode_port(0U, 0U);
+    }
+
+    {
+        /* 0xD1 can also be a normal RESET_ACK byte (0x80 | 0x51).
+         * A port that is not in debug mode must still parse it as 8 bytes. */
+        make_frame(frame, 0x51U, 7U, 2U, 3U, 0x80U);
+        armor_link_process(1U, frame, sizeof(frame));
+        assert(last_port == 1U);
+        assert(last_packet.frame_type == 0U);
+        assert(last_packet.reset_ack != 0U);
+        assert(last_packet.small_hit_count == 7U);
     }
 
     puts("armor_link host test: PASS");

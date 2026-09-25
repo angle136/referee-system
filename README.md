@@ -10,6 +10,8 @@ referee-system/
 └── referee_main/     # 裁判系统主控工程；当前目标位于 board/105_rc/
 ```
 
+完整的受击算法、板间协议、ADC 调试模式、复位同步和验证命令见：[docs/裁判系统小闭环工程README.md](docs/裁判系统小闭环工程README.md)
+
 ## 装甲子板
 
 工程目录：`armor_subboard/`
