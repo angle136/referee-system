@@ -10,6 +10,7 @@ bool ArmorLink_IsOnline(void);
 bool ArmorLink_IsTransitioning(void);
 bool ArmorLink_TransitionRedOn(void);
 uint8_t ArmorLink_GetTeam(void);
+bool ArmorLink_IsAdcDebugActive(void);
 bool ArmorLink_TakeCounterReset(uint8_t *reset_epoch, uint8_t *reset_sequence);
 bool ArmorLink_IsCounterResetAckActive(void);
 

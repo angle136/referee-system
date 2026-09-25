@@ -15,6 +15,41 @@ static uint16_t armor_big_hit_count;
 static uint8_t armor_reset_epoch;
 static uint8_t armor_reset_sequence;
 static bool armor_led_hit_active;
+static uint16_t armor_adc_history[ARMOR_ADC_HISTORY_COUNT];
+static uint8_t armor_adc_history_count;
+static uint8_t armor_adc_history_write_index;
+
+static void ArmorApp_RecordAdc(uint16_t adc_raw)
+{
+  armor_adc_history[armor_adc_history_write_index] = adc_raw;
+  armor_adc_history_write_index =
+      (uint8_t)((armor_adc_history_write_index + 1U) % ARMOR_ADC_HISTORY_COUNT);
+  if (armor_adc_history_count < ARMOR_ADC_HISTORY_COUNT)
+  {
+    armor_adc_history_count++;
+  }
+}
+
+static void ArmorApp_GetAdcHistory(uint16_t samples[ARMOR_ADC_HISTORY_COUNT])
+{
+  uint8_t index;
+  uint8_t oldest = armor_adc_history_count == ARMOR_ADC_HISTORY_COUNT
+                       ? armor_adc_history_write_index
+                       : 0U;
+
+  for (index = 0U; index < ARMOR_ADC_HISTORY_COUNT; index++)
+  {
+    if (index < armor_adc_history_count)
+    {
+      uint8_t source = (uint8_t)((oldest + index) % ARMOR_ADC_HISTORY_COUNT);
+      samples[index] = armor_adc_history[source];
+    }
+    else
+    {
+      samples[index] = 0U;
+    }
+  }
+}
 
 void ArmorApp_Init(void)
 {
@@ -32,6 +67,12 @@ void ArmorApp_Init(void)
   armor_reset_epoch = 0U;
   armor_reset_sequence = 0U;
   armor_led_hit_active = false;
+  for (uint8_t index = 0U; index < ARMOR_ADC_HISTORY_COUNT; index++)
+  {
+    armor_adc_history[index] = 0U;
+  }
+  armor_adc_history_count = 0U;
+  armor_adc_history_write_index = 0U;
 }
 
 void ArmorApp_RunOnce(void)
@@ -50,6 +91,8 @@ void ArmorApp_RunOnce(void)
     armor_big_hit_count = 0U;
     armor_reset_epoch = reset_epoch;
     armor_reset_sequence = reset_sequence;
+    armor_adc_history_count = 0U;
+    armor_adc_history_write_index = 0U;
     ArmorProtocol_SendStatus(armor_small_hit_count,
                              armor_big_hit_count,
                              armor_reset_epoch,
@@ -63,6 +106,10 @@ void ArmorApp_RunOnce(void)
 
   if (armor_detector.baseline_ready && hit_type != ARMOR_HIT_NONE)
   {
+    if (adc_raw > armor_detector.baseline)
+    {
+      ArmorApp_RecordAdc((uint16_t)adc_raw);
+    }
     if (hit_type == ARMOR_HIT_BIG)
     {
       armor_big_hit_count++;
@@ -71,11 +118,14 @@ void ArmorApp_RunOnce(void)
     {
       armor_small_hit_count++;
     }
-    ArmorProtocol_SendStatus(armor_small_hit_count,
-                             armor_big_hit_count,
-                             armor_reset_epoch,
-                             ArmorLink_IsCounterResetAckActive(),
-                             armor_reset_sequence);
+    if (!ArmorLink_IsAdcDebugActive())
+    {
+      ArmorProtocol_SendStatus(armor_small_hit_count,
+                               armor_big_hit_count,
+                               armor_reset_epoch,
+                               ArmorLink_IsCounterResetAckActive(),
+                               armor_reset_sequence);
+    }
     armor_last_heartbeat_tick = now;
     armor_led_hit_started_tick = now;
     armor_led_hit_active = true;
@@ -90,11 +140,20 @@ void ArmorApp_RunOnce(void)
 
   if ((uint32_t)(now - armor_last_heartbeat_tick) >= ARMOR_HEARTBEAT_PERIOD_MS)
   {
-    ArmorProtocol_SendStatus(armor_small_hit_count,
-                             armor_big_hit_count,
-                             armor_reset_epoch,
-                             ArmorLink_IsCounterResetAckActive(),
-                             armor_reset_sequence);
+    if (ArmorLink_IsAdcDebugActive())
+    {
+      uint16_t samples[ARMOR_ADC_HISTORY_COUNT];
+      ArmorApp_GetAdcHistory(samples);
+      ArmorProtocol_SendAdcDebug(samples);
+    }
+    else
+    {
+      ArmorProtocol_SendStatus(armor_small_hit_count,
+                               armor_big_hit_count,
+                               armor_reset_epoch,
+                               ArmorLink_IsCounterResetAckActive(),
+                               armor_reset_sequence);
+    }
     armor_last_heartbeat_tick = now;
   }
 

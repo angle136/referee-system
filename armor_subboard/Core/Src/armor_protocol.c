@@ -5,22 +5,27 @@
 #include "usart.h"
 
 static uint8_t armor_protocol_armor_id;
+typedef struct
+{
+  uint8_t data[ARMOR_ADC_DEBUG_FRAME_SIZE];
+  uint8_t length;
+} ArmorProtocolTxPacket_t;
 static Kfifo_t armor_tx_fifo;
-static uint8_t armor_tx_storage[ARMOR_TX_QUEUE_CAPACITY][ARMOR_PACKET_SIZE];
-static uint8_t armor_tx_active_packet[ARMOR_PACKET_SIZE];
+static ArmorProtocolTxPacket_t armor_tx_storage[ARMOR_TX_QUEUE_CAPACITY];
+static ArmorProtocolTxPacket_t armor_tx_active_packet;
 static volatile bool armor_tx_active;
 
 static void ArmorProtocol_StartNext(void)
 {
-  if (armor_tx_active || !Kfifo_Pop(&armor_tx_fifo, armor_tx_active_packet))
+  if (armor_tx_active || !Kfifo_Pop(&armor_tx_fifo, &armor_tx_active_packet))
   {
     return;
   }
 
   armor_tx_active = true;
   if (HAL_UART_Transmit_IT(&huart2,
-                           armor_tx_active_packet,
-                           ARMOR_PACKET_SIZE) != HAL_OK)
+                           armor_tx_active_packet.data,
+                           armor_tx_active_packet.length) != HAL_OK)
   {
     armor_tx_active = false;
   }
@@ -30,7 +35,7 @@ void ArmorProtocol_Init(void)
 {
   Kfifo_Init(&armor_tx_fifo,
              armor_tx_storage,
-             ARMOR_PACKET_SIZE,
+             sizeof(armor_tx_storage[0]),
              ARMOR_TX_QUEUE_CAPACITY);
   armor_protocol_armor_id = ARMOR_ID;
   armor_tx_active = false;
@@ -47,7 +52,8 @@ void ArmorProtocol_SendStatus(uint16_t small_hit_count,
                               bool reset_ack,
                               uint8_t reset_sequence)
 {
-  uint8_t packet[ARMOR_PACKET_SIZE];
+  ArmorProtocolTxPacket_t queued;
+  uint8_t *packet = queued.data;
   uint8_t sum = 0U;
   uint32_t primask;
 
@@ -68,9 +74,43 @@ void ArmorProtocol_SendStatus(uint16_t small_hit_count,
     sum = (uint8_t)(sum + packet[i]);
   }
   packet[7] = sum;
+  queued.length = ARMOR_PACKET_SIZE;
   primask = __get_PRIMASK();
   __disable_irq();
-  (void)Kfifo_Push(&armor_tx_fifo, packet);
+  (void)Kfifo_Push(&armor_tx_fifo, &queued);
+  ArmorProtocol_StartNext();
+  if (primask == 0U)
+  {
+    __enable_irq();
+  }
+}
+
+void ArmorProtocol_SendAdcDebug(const uint16_t *samples)
+{
+  ArmorProtocolTxPacket_t queued;
+  uint8_t sum = 0U;
+
+  if (samples == NULL)
+  {
+    return;
+  }
+  queued.data[0] = 0xA5U;
+  queued.data[1] = ARMOR_ADC_DEBUG_CMD;
+  for (uint8_t index = 0U; index < ARMOR_ADC_HISTORY_COUNT; index++)
+  {
+    queued.data[2U + index * 2U] = (uint8_t)(samples[index] & 0xFFU);
+    queued.data[3U + index * 2U] = (uint8_t)(samples[index] >> 8U);
+  }
+  for (uint8_t index = 0U; index < ARMOR_ADC_DEBUG_FRAME_SIZE - 1U; index++)
+  {
+    sum = (uint8_t)(sum + queued.data[index]);
+  }
+  queued.data[ARMOR_ADC_DEBUG_FRAME_SIZE - 1U] = sum;
+  queued.length = ARMOR_ADC_DEBUG_FRAME_SIZE;
+
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  (void)Kfifo_Push(&armor_tx_fifo, &queued);
   ArmorProtocol_StartNext();
   if (primask == 0U)
   {

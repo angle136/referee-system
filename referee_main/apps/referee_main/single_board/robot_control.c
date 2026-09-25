@@ -46,6 +46,7 @@ static volatile uint32_t referee_tx_error_count;
 static volatile uint32_t armor_config_tx_count;
 static volatile uint32_t armor_config_tx_error_count;
 static volatile uint16_t referee_last_command_id;
+static volatile uint8_t armor_adc_debug_active;
 
 static int referee_send_frame(uint16_t command_id, const void *payload, uint16_t payload_length)
 {
@@ -186,15 +187,24 @@ static void referee_send_armor_config(void)
         uint8_t reset_pending;
         uint8_t sum = 0U;
 
-        tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
-        reset_pending = armor_counter_get_reset_request(&armor_counters,
-                                                        port_id,
-                                                        &reset_epoch);
-        if (reset_pending != 0U)
+        if (armor_adc_debug_active != 0U)
         {
-            mode |= REFEREE_MAIN_ARMOR_MODE_RESET_COUNTERS;
+            mode |= REFEREE_MAIN_ARMOR_MODE_ADC_DEBUG;
+            reset_pending = 0U;
+            reset_epoch = 0U;
         }
-        tx_mutex_put(&armor_counter_mutex);
+        else
+        {
+            tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
+            reset_pending = armor_counter_get_reset_request(&armor_counters,
+                                                            port_id,
+                                                            &reset_epoch);
+            if (reset_pending != 0U)
+            {
+                mode |= REFEREE_MAIN_ARMOR_MODE_RESET_COUNTERS;
+            }
+            tx_mutex_put(&armor_counter_mutex);
+        }
 
         frame[0] = REFEREE_SOF;
         frame[1] = REFEREE_MAIN_ARMOR_CONFIG_CMD;
@@ -236,6 +246,14 @@ static void armor_packet_received(uint8_t port_id, const armor_link_packet_t *pa
 
     if (packet == 0 || port_id >= REFEREE_MAIN_ARMOR_COUNT)
     {
+        return;
+    }
+
+    if (packet->frame_type == REFEREE_MAIN_ARMOR_DEBUG_CMD)
+    {
+        /* ADC collection frames are diagnostics only. They must never enter
+         * the cumulative counter or HP path. Port identity is authoritative. */
+        referee_state_mark_armor_seen(port_id);
         return;
     }
 
@@ -345,11 +363,30 @@ void referee_control_toggle_team(void)
 
 void referee_control_reset_system(void)
 {
+    armor_adc_debug_active = 0U;
+    armor_link_set_debug_mode(0U);
     tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
     armor_counter_request_reset(&armor_counters);
     referee_state_reset();
     tx_mutex_put(&armor_counter_mutex);
     referee_control_refresh_led();
+}
+
+void referee_control_start_adc_debug(void)
+{
+    armor_adc_debug_active = 1U;
+    armor_link_set_debug_mode(1U);
+}
+
+void referee_control_stop_adc_debug(void)
+{
+    armor_adc_debug_active = 0U;
+    armor_link_set_debug_mode(0U);
+}
+
+uint8_t referee_control_is_adc_debug_active(void)
+{
+    return armor_adc_debug_active;
 }
 
 static void referee_watchdog_thread_entry(ULONG thread_input)
@@ -438,7 +475,7 @@ static int referee_uart_init(void)
             .huart = armor_handles[port_id],
             .rx_buf = armor_rx_buffer[port_id],
             .rx_buf_size = REFEREE_MAIN_ARMOR_RX_BUFFER_SIZE,
-            .expected_rx_len = REFEREE_MAIN_ARMOR_PACKET_SIZE,
+            .expected_rx_len = 0,
             .rx_mode = UART_MODE_IT,
             .tx_mode = UART_MODE_BLOCKING,
         };
@@ -483,6 +520,7 @@ void robot_control_init(void)
     }
 
     armor_counter_init(&armor_counters);
+    armor_adc_debug_active = 0U;
 
     armor_link_init(armor_packet_received);
     if (referee_uart_init() != 0)

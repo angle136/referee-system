@@ -18,6 +18,7 @@ static ArmorLinkParser_t armor_parser;
 static uint32_t armor_last_master_tick;
 static uint32_t armor_key_tick;
 static uint8_t armor_team;
+static bool armor_adc_debug_active;
 static bool armor_online;
 static bool armor_transitioning;
 static uint8_t armor_transition_phase;
@@ -41,7 +42,8 @@ static bool ArmorLink_FrameValid(const uint8_t *frame)
       frame[3] > ARMOR_MAX_ID ||
       (frame[4] & ARMOR_LINK_MODE_ENABLE) == 0U ||
       (frame[4] & (uint8_t)~(ARMOR_LINK_MODE_ENABLE |
-                            ARMOR_LINK_MODE_RESET_COUNTERS)) != 0U)
+                            ARMOR_LINK_MODE_RESET_COUNTERS |
+                            ARMOR_LINK_MODE_ADC_DEBUG)) != 0U)
   {
     return false;
   }
@@ -57,6 +59,7 @@ static void ArmorLink_HandleFrame(const uint8_t *frame, uint32_t now)
 {
   armor_team = frame[2];
   ArmorProtocol_SetArmorId(frame[3]);
+  armor_adc_debug_active = (frame[4] & ARMOR_LINK_MODE_ADC_DEBUG) != 0U;
   if ((frame[4] & ARMOR_LINK_MODE_RESET_COUNTERS) == 0U)
   {
     armor_counter_reset_command_active = false;
@@ -176,6 +179,7 @@ void ArmorLink_Init(void)
   armor_last_master_tick = now;
   armor_key_tick = now;
   armor_team = ARMOR_TEAM_BLUE;
+  armor_adc_debug_active = false;
   armor_online = false;
   armor_transitioning = false;
   armor_transition_phase = 0U;
@@ -255,6 +259,11 @@ bool ArmorLink_TransitionRedOn(void)
 uint8_t ArmorLink_GetTeam(void)
 {
   return armor_team;
+}
+
+bool ArmorLink_IsAdcDebugActive(void)
+{
+  return armor_adc_debug_active;
 }
 
 bool ArmorLink_TakeCounterReset(uint8_t *reset_epoch, uint8_t *reset_sequence)
