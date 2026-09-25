@@ -75,10 +75,10 @@ adc_raw > adc_baseline + ARMOR_BIG_HIT_ADC_THRESHOLD  => 大弹
 现场标定只需修改：
 
 ```c
-#define ARMOR_BIG_HIT_ADC_THRESHOLD 1000U
+#define ARMOR_BIG_HIT_ADC_THRESHOLD 4095U
 ```
 
-该值目前是占位初值，必须结合真实传感器、装甲结构和场地弹丸实测。建议记录空闲基线、小弹峰值和大弹峰值后，把阈值放在两类峰值分布之间，并留出噪声裕量。
+当前值为 `4095U`，等价于暂不触发大弹分类；现场采样完成后再修改。必须结合真实传感器、装甲结构和场地弹丸实测。建议记录空闲基线、小弹峰值和大弹峰值后，把阈值放在两类峰值分布之间，并留出噪声裕量。
 
 ### 2.3 累计计数和发送策略
 
@@ -93,7 +93,7 @@ adc_raw > adc_baseline + ARMOR_BIG_HIT_ADC_THRESHOLD  => 大弹
 
 ## 3. 板间通信协议 V0.2
 
-两种帧均固定 8 字节、`115200 8N1`，校验为前 7 字节逐字节相加取低 8 位。
+普通状态帧固定 8 字节，ADC 调试帧固定 11 字节，均使用 `115200 8N1`；校验均为帧内校验字节之前的内容逐字节相加取低 8 位。
 
 ### 3.1 子板到主控：累计状态帧
 
@@ -130,15 +130,38 @@ adc_raw > adc_baseline + ARMOR_BIG_HIT_ADC_THRESHOLD  => 大弹
 ```c
 0x01  ENABLE：合法配置/保活，必须置位
 0x02  RESET_COUNTERS：要求子板把大小弹计数清零
+0x04  ADC_DEBUG：进入 ADC 采样调试模式
 ```
 
 主控每 100 ms 对四路端口发送一次 `0xC1`。子板超过 500 ms 未收到合法帧会执行掉线灯效并进入离线模式；在线时阵营和 ID 由主控控制，离线时 PB6/PB7 可选择红蓝方。
+
+### 3.3 ADC 调试帧 `0xD1`
+
+主控设置 `ADC_DEBUG` 后，子板不发送普通累计状态帧，改为每 50 ms 发送最近四次有效采样：
+
+```text
+字节 0   0xA5
+字节 1   0xD1
+字节 2   sample0 low
+字节 3   sample0 high
+字节 4   sample1 low
+字节 5   sample1 high
+字节 6   sample2 low
+字节 7   sample2 high
+字节 8   sample3 low
+字节 9   sample3 high
+字节 10  sum8(bytes 0..9)
+```
+
+`sample0` 是四个值中最旧的，`sample3` 最新；尚未采满四次的位置填 `0`。采样条件是“DX 上升沿确认受击且 ADC 原始值高于当前基线”。调试模式只记录 ADC，不增加子板累计伤害计数，因此退出调试后不会把采样用的敲击补扣到 HP。主控按物理 UART 端口保存数据，调试帧不会进入 `armor_counter`。
+
+主控按端口记录调试解析状态，只有某端口成功下发调试配置后才按 11 字节解析；这样普通复位 ACK 即使字节值恰好为 `0xD1`，也不会在其他端口被误判为调试帧。
 
 ## 4. 主控计数同步与扣血
 
 关键文件：
 
-- `referee_main/apps/referee_main/single_board/armor_link.c`：8 字节流解析和校验。
+- `referee_main/apps/referee_main/single_board/armor_link.c`：8/11 字节流解析和校验。
 - `robot_control.c`：线程、`0xC1` 调度、状态更新和复位入口。
 - `armor_counter.c/.h`：每端口基线、差值、安全重同步、16 位回绕和复位 ACK 状态机。
 - `referee_state.c`：受互斥锁保护的 HP、阵营、在线状态、总受击次数。
@@ -202,7 +225,7 @@ damage      = small_delta * 2U + big_delta * 20U;
 
 旧的 `hit_event_thread` 和受击事件队列已经删除，因为状态帧本身就是可恢复的累计日志。
 
-OLED 为 128x64 SSD1306，I2C1，当前驱动 7 位地址为 `0x3C`。KEY3/KEY4 在屏幕关闭时均可唤醒 UI；列表中 KEY1/KEY2 上下移动，确认键进入；KEY4 在子页面返回首页，在首页退出 UI。设置菜单中的切换阵营和系统复位都有确认框与 toast。
+OLED 为 128x64 SSD1306，I2C1，当前驱动 7 位地址为 `0x3C`。KEY3/KEY4 在屏幕关闭时均可唤醒 UI；列表中 KEY1/KEY2 上下移动，确认键进入；KEY4 在普通子页面返回首页，在首页退出 UI。设置菜单中的切换阵营和系统复位都有确认框与 toast；进入 ADC 调试后，KEY1/KEY2 切换四路物理端口，KEY4 退出调试并恢复普通保活。
 
 ## 7. 构建与测试
 
@@ -273,10 +296,18 @@ gcc referee_main/apps/referee_main/tests/test_armor_counter.c `
 7. 分别验证小弹扣 2、大弹扣 20，以及 HP 下限为 0；
 8. 再接入其余三路并核对 UART 物理位置。
 
+ADC 现场采样建议：
+
+1. 进入 OLED `SET -> ADC`；
+2. 用 KEY1/KEY2 选择要观察的物理串口端口；
+3. 每次 DX 触发后读取页面中的四个 ADC 原始值，重点记录小弹和大弹峰值；
+4. 按 KEY4 退出，再修改 `ARMOR_BIG_HIT_ADC_THRESHOLD` 并重新构建烧录。
+
 常见问题：
 
 - 一击多次计数：先观察子板计数；若子板已多加，检查 DX 波形和 50 ms 冷却，而不是在主控增加时间去重。
 - 大小弹判断错误：调 `ARMOR_BIG_HIT_ADC_THRESHOLD`，并确认 DX 边沿发生时 ADC 已到峰值；如果硬件存在明显相位差，后续应增加短峰值窗口，而不是让 ADC 独立触发受击。
+- ADC 调试页没有新值：确认主控已持续下发 `0xC1 mode=0x05`，检查对应物理 UART 是否在线；调试页显示的是最近四次高于基线的 DX 触发值，不是连续 ADC 波形。
 - 主控在线但不扣血：首包只建基线；复位后还要等对应端口回报目标 epoch。
 - `resync` 增加：检查子板是否复位、协议版本是否一致、串口干扰和异常差值上限。
 - DAP/SWD 初始化失败：优先排查供电、SWDIO、SWCLK、NRST、BOOT0 和焊接，不先怀疑业务协议。

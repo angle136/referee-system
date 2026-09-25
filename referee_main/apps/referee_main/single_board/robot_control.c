@@ -225,9 +225,13 @@ static void referee_send_armor_config(void)
         }
         frame[7] = sum;
 
-        if (armor_uart[port_id] == 0 ||
-            BSP_UART_Send(armor_uart[port_id], frame, sizeof(frame), 50U) !=
-                (int)sizeof(frame))
+        int send_result = armor_uart[port_id] == 0
+                              ? -1
+                              : BSP_UART_Send(armor_uart[port_id],
+                                              frame,
+                                              sizeof(frame),
+                                              50U);
+        if (send_result != (int)sizeof(frame))
         {
             armor_config_tx_error_count++;
             LOG_W("send armor config failed: port=%u", (unsigned int)port_id);
@@ -235,6 +239,8 @@ static void referee_send_armor_config(void)
         else
         {
             armor_config_tx_count++;
+            armor_link_set_debug_mode_port(port_id,
+                                           armor_adc_debug_active);
         }
     }
 }
@@ -375,7 +381,7 @@ void referee_control_reset_system(void)
 void referee_control_start_adc_debug(void)
 {
     armor_adc_debug_active = 1U;
-    armor_link_set_debug_mode(1U);
+    armor_link_set_debug_mode(0U);
 }
 
 void referee_control_stop_adc_debug(void)

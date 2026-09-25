@@ -10,11 +10,12 @@ typedef struct
     uint8_t buffer[REFEREE_MAIN_ARMOR_DEBUG_PACKET_SIZE];
     uint8_t length;
     uint8_t expected_length;
+    uint8_t debug_expected;
 } armor_link_parser_t;
 
 static armor_link_parser_t          parsers[REFEREE_MAIN_ARMOR_COUNT];
 static armor_link_packet_callback_t packet_callback;
-static volatile uint8_t              debug_mode;
+static volatile uint8_t              debug_mode_mask;
 static volatile uint32_t            packet_count[REFEREE_MAIN_ARMOR_COUNT];
 static volatile uint32_t            checksum_error_count[REFEREE_MAIN_ARMOR_COUNT];
 static volatile uint16_t            reported_small_hit_count[REFEREE_MAIN_ARMOR_COUNT];
@@ -42,7 +43,8 @@ static void armor_link_emit(uint8_t port_id, const uint8_t *data)
 
     memset(&packet, 0, sizeof(packet));
     packet.frame_type = 0U;
-    if (debug_mode != 0U && data[1] == REFEREE_MAIN_ARMOR_DEBUG_CMD)
+    if ((debug_mode_mask & (uint8_t)(1U << port_id)) != 0U &&
+        data[1] == REFEREE_MAIN_ARMOR_DEBUG_CMD)
     {
         packet.frame_type = REFEREE_MAIN_ARMOR_DEBUG_CMD;
         reported_adc_debug[port_id] = 1U;
@@ -92,16 +94,36 @@ void armor_link_init(armor_link_packet_callback_t callback)
     memset((void *)reported_adc_debug, 0, sizeof(reported_adc_debug));
     memset((void *)reported_adc_samples, 0, sizeof(reported_adc_samples));
     packet_callback = callback;
-    debug_mode = 0U;
+    debug_mode_mask = 0U;
 }
 
 void armor_link_set_debug_mode(uint8_t enabled)
 {
-    debug_mode = enabled != 0U ? 1U : 0U;
-    for (uint8_t port_id = 0U; port_id < REFEREE_MAIN_ARMOR_COUNT; port_id++)
+    debug_mode_mask = enabled != 0U
+                          ? (uint8_t)((1UL << REFEREE_MAIN_ARMOR_COUNT) - 1UL)
+                          : 0U;
+}
+
+void armor_link_set_debug_mode_port(uint8_t port_id, uint8_t enabled)
+{
+    uint8_t bit;
+
+    if (port_id >= REFEREE_MAIN_ARMOR_COUNT)
     {
-        parsers[port_id].length = 0U;
-        parsers[port_id].expected_length = 0U;
+        return;
+    }
+    bit = (uint8_t)(1U << port_id);
+    if (((debug_mode_mask & bit) != 0U) == (enabled != 0U))
+    {
+        return;
+    }
+    if (enabled != 0U)
+    {
+        debug_mode_mask |= bit;
+    }
+    else
+    {
+        debug_mode_mask &= (uint8_t)~bit;
     }
 }
 
@@ -125,6 +147,8 @@ void armor_link_process(uint8_t port_id, const uint8_t *data, size_t length)
             {
                 parser->buffer[parser->length++] = byte;
                 parser->expected_length = 0U;
+                parser->debug_expected =
+                    (debug_mode_mask & (uint8_t)(1U << port_id)) != 0U;
             }
             continue;
         }
@@ -132,7 +156,7 @@ void armor_link_process(uint8_t port_id, const uint8_t *data, size_t length)
         parser->buffer[parser->length++] = byte;
         if (parser->length == 2U)
         {
-            parser->expected_length = (debug_mode != 0U &&
+            parser->expected_length = (parser->debug_expected != 0U &&
                                        byte == REFEREE_MAIN_ARMOR_DEBUG_CMD)
                                            ? REFEREE_MAIN_ARMOR_DEBUG_PACKET_SIZE
                                            : REFEREE_MAIN_ARMOR_PACKET_SIZE;
