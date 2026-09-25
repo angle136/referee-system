@@ -20,8 +20,5 @@ void referee_control_reset_system(void);
 void referee_control_start_adc_debug(void);
 void referee_control_stop_adc_debug(void);
 uint8_t referee_control_is_adc_debug_active(void);
-void referee_control_start_adc_debug(void);
-void referee_control_stop_adc_debug(void);
-uint8_t referee_control_is_adc_debug_active(void);
 
 #endif /* _REFEREE_MAIN_CONTROL_H_ */

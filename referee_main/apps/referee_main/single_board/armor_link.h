@@ -35,7 +35,7 @@ typedef struct
 } armor_link_diagnostics_t;
 
 void armor_link_init(armor_link_packet_callback_t callback);
-void armor_link_set_debug_mode(uint8_t enabled);
+void armor_link_set_debug_mode_all(uint8_t enabled);
 void armor_link_set_debug_mode_port(uint8_t port_id, uint8_t enabled);
 void armor_link_process(uint8_t port_id, const uint8_t *data, size_t length);
 void armor_link_get_diagnostics(uint8_t port_id,
