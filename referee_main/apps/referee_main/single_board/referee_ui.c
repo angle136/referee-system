@@ -46,7 +46,7 @@ enum
 {
     UI_CONFIRM_FOCUS_CANCEL = 0U,
     UI_CONFIRM_FOCUS_OK,
-    UI_SETTINGS_ITEM_COUNT = 2U,
+    UI_SETTINGS_ITEM_COUNT = 3U,
     UI_HOME_ITEM_COUNT = UI_PAGE_COUNT - 1U
 };
 
@@ -63,6 +63,7 @@ static ui_page_t ui_page;
 static uint8_t ui_home_selected;
 static uint8_t ui_armor_offset;
 static uint8_t ui_settings_selected;
+static uint8_t ui_debug_port;
 static ui_confirm_action_t ui_confirm_action;
 static uint8_t ui_confirm_focus;
 static uint32_t ui_toast_until;
@@ -422,6 +423,22 @@ static void ui_draw_protocol(int16_t x)
 
 static void ui_draw_debug(int16_t x)
 {
+    if (referee_control_is_adc_debug_active() != 0U)
+    {
+        armor_link_diagnostics_t diagnostics;
+        char port_label[3] = {'P', (char)('0' + ui_debug_port), '\0'};
+
+        armor_link_get_diagnostics(ui_debug_port, &diagnostics);
+        ui_text_main_large((int16_t)(x + 2), 0, port_label);
+        ui_text_main_large((int16_t)(x + 38), 0,
+                           diagnostics.adc_debug != 0U ? "ADC" : "WAIT");
+        ui_u32_main_large((int16_t)(x + 2), 18, diagnostics.adc_samples[0]);
+        ui_u32_main_large((int16_t)(x + 68), 18, diagnostics.adc_samples[1]);
+        ui_u32_main_large((int16_t)(x + 2), 42, diagnostics.adc_samples[2]);
+        ui_u32_main_large((int16_t)(x + 68), 42, diagnostics.adc_samples[3]);
+        return;
+    }
+
     uint8_t port;
     uint32_t crc = 0U;
     referee_control_diagnostics_t control;
@@ -474,7 +491,7 @@ static void ui_draw_menu_rows(int16_t x, const char *const *items,
 
 static void ui_draw_settings(int16_t x)
 {
-    static const char *const items[] = {"TEAM", "RESET"};
+    static const char *const items[] = {"TEAM", "RESET", "ADC"};
 
     ui_draw_menu_rows(x,
                       items,
@@ -593,6 +610,14 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
     }
     else if (ui_page == UI_PAGE_SETTINGS && event.action == KK_UI_INPUT_OK)
     {
+        if (ui_settings_selected == 2U)
+        {
+            referee_control_start_adc_debug();
+            ui_debug_port = 0U;
+            ui_page = UI_PAGE_DEBUG;
+            KK_UI_Invalidate();
+            return;
+        }
         ui_confirm_action = (ui_confirm_action_t)(ui_settings_selected +
                                                   UI_CONFIRM_TEAM);
         ui_confirm_focus = UI_CONFIRM_FOCUS_CANCEL;
@@ -606,6 +631,23 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
     else if (ui_page == UI_PAGE_ARMOR && event.action == KK_UI_INPUT_DOWN)
     {
         ui_armor_offset = 2U;
+        KK_UI_Invalidate();
+    }
+    else if (ui_page == UI_PAGE_DEBUG &&
+             referee_control_is_adc_debug_active() != 0U &&
+             (event.action == KK_UI_INPUT_UP ||
+              event.action == KK_UI_INPUT_DOWN))
+    {
+        if (event.action == KK_UI_INPUT_UP)
+        {
+            ui_debug_port = (uint8_t)((ui_debug_port + REFEREE_MAIN_ARMOR_COUNT - 1U) %
+                                      REFEREE_MAIN_ARMOR_COUNT);
+        }
+        else
+        {
+            ui_debug_port = (uint8_t)((ui_debug_port + 1U) %
+                                      REFEREE_MAIN_ARMOR_COUNT);
+        }
         KK_UI_Invalidate();
     }
     else if (ui_page == UI_PAGE_HOME && event.action == KK_UI_INPUT_UP)
@@ -713,6 +755,7 @@ static UINT ui_display_start(void)
     ui_home_selected = 0U;
     ui_armor_offset = 0U;
     ui_settings_selected = 0U;
+    ui_debug_port = 0U;
     ui_confirm_action = UI_CONFIRM_NONE;
     ui_confirm_focus = UI_CONFIRM_FOCUS_CANCEL;
     ui_toast_until = 0U;
@@ -795,7 +838,15 @@ static void ui_thread_entry(ULONG argument)
                 }
                 else if (ui_page != UI_PAGE_HOME)
                 {
-                    ui_page = UI_PAGE_HOME;
+                    if (referee_control_is_adc_debug_active() != 0U)
+                    {
+                        referee_control_stop_adc_debug();
+                        ui_page = UI_PAGE_SETTINGS;
+                    }
+                    else
+                    {
+                        ui_page = UI_PAGE_HOME;
+                    }
                     KK_UI_Invalidate();
                 }
                 else

@@ -11,5 +11,6 @@ void ArmorProtocol_SendStatus(uint16_t small_hit_count,
                               uint8_t reset_sequence);
 void ArmorProtocol_Init(void);
 void ArmorProtocol_SetArmorId(uint8_t armor_id);
+void ArmorProtocol_SendAdcDebug(const uint16_t *samples);
 
 #endif

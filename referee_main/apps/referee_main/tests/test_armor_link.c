@@ -32,6 +32,22 @@ static void make_frame(uint8_t frame[8], uint8_t armor_id,
     for (i = 0U; i < 7U; ++i) frame[7] = (uint8_t)(frame[7] + frame[i]);
 }
 
+static void make_debug_frame(uint8_t frame[11], const uint16_t samples[4])
+{
+    frame[0] = 0xA5U;
+    frame[1] = 0xD1U;
+    for (uint8_t index = 0U; index < 4U; index++)
+    {
+        frame[2U + index * 2U] = (uint8_t)samples[index];
+        frame[3U + index * 2U] = (uint8_t)(samples[index] >> 8U);
+    }
+    frame[10] = 0U;
+    for (uint8_t index = 0U; index < 10U; index++)
+    {
+        frame[10] = (uint8_t)(frame[10] + frame[index]);
+    }
+}
+
 int main(void)
 {
     uint8_t frame[8];
@@ -64,6 +80,24 @@ int main(void)
     assert(diagnostics.small_hit_count == 0x1234U);
     assert(diagnostics.big_hit_count == 0x5678U);
     assert(diagnostics.reset_epoch == 9U);
+
+    {
+        const uint16_t samples[4] = {100U, 2048U, 3000U, 4095U};
+        uint8_t debug_frame[11];
+        make_debug_frame(debug_frame, samples);
+        armor_link_set_debug_mode(1U);
+        armor_link_process(0U, debug_frame, sizeof(debug_frame));
+        assert(callback_count == 3U);
+        assert(last_packet.frame_type == 0xD1U);
+        for (uint8_t index = 0U; index < 4U; index++)
+        {
+            assert(last_packet.adc_samples[index] == samples[index]);
+        }
+        armor_link_get_diagnostics(0U, &diagnostics);
+        assert(diagnostics.adc_debug != 0U);
+        assert(diagnostics.adc_samples[3] == 4095U);
+        armor_link_set_debug_mode(0U);
+    }
 
     puts("armor_link host test: PASS");
     return 0;
