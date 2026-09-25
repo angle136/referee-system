@@ -176,6 +176,7 @@ static void referee_send_hurt_status(uint8_t armor_id)
 static void referee_send_armor_config(void)
 {
     referee_state_snapshot_t snapshot;
+    uint8_t adc_debug_active = armor_adc_debug_active;
 
     referee_state_get_snapshot(&snapshot);
 
@@ -187,7 +188,7 @@ static void referee_send_armor_config(void)
         uint8_t reset_pending;
         uint8_t sum = 0U;
 
-        if (armor_adc_debug_active != 0U)
+        if (adc_debug_active != 0U)
         {
             mode |= REFEREE_MAIN_ARMOR_MODE_ADC_DEBUG;
             reset_pending = 0U;
@@ -240,7 +241,7 @@ static void referee_send_armor_config(void)
         {
             armor_config_tx_count++;
             armor_link_set_debug_mode_port(port_id,
-                                           armor_adc_debug_active);
+                                           adc_debug_active);
         }
     }
 }
@@ -370,7 +371,7 @@ void referee_control_toggle_team(void)
 void referee_control_reset_system(void)
 {
     armor_adc_debug_active = 0U;
-    armor_link_set_debug_mode(0U);
+    armor_link_set_debug_mode_all(0U);
     tx_mutex_get(&armor_counter_mutex, TX_WAIT_FOREVER);
     armor_counter_request_reset(&armor_counters);
     referee_state_reset();
@@ -381,13 +382,13 @@ void referee_control_reset_system(void)
 void referee_control_start_adc_debug(void)
 {
     armor_adc_debug_active = 1U;
-    armor_link_set_debug_mode(0U);
+    armor_link_set_debug_mode_all(0U);
 }
 
 void referee_control_stop_adc_debug(void)
 {
     armor_adc_debug_active = 0U;
-    armor_link_set_debug_mode(0U);
+    armor_link_set_debug_mode_all(0U);
 }
 
 uint8_t referee_control_is_adc_debug_active(void)

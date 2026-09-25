@@ -20,6 +20,15 @@ static uint8_t armor_adc_history_count;
 static uint8_t armor_adc_history_write_index;
 static bool armor_adc_debug_was_active;
 
+static void ArmorApp_SendStatus(void)
+{
+  ArmorProtocol_SendStatus(armor_small_hit_count,
+                           armor_big_hit_count,
+                           armor_reset_epoch,
+                           ArmorLink_IsCounterResetAckActive(),
+                           armor_reset_sequence);
+}
+
 static void ArmorApp_RecordAdc(uint16_t adc_raw)
 {
   armor_adc_history[armor_adc_history_write_index] = adc_raw;
@@ -101,11 +110,7 @@ void ArmorApp_RunOnce(void)
     armor_reset_sequence = reset_sequence;
     armor_adc_history_count = 0U;
     armor_adc_history_write_index = 0U;
-    ArmorProtocol_SendStatus(armor_small_hit_count,
-                             armor_big_hit_count,
-                             armor_reset_epoch,
-                             ArmorLink_IsCounterResetAckActive(),
-                             armor_reset_sequence);
+    ArmorApp_SendStatus();
     armor_last_heartbeat_tick = now;
   }
   adc_raw = ArmorSensor_ReadAdcRaw();
@@ -128,11 +133,7 @@ void ArmorApp_RunOnce(void)
       {
         armor_small_hit_count++;
       }
-      ArmorProtocol_SendStatus(armor_small_hit_count,
-                               armor_big_hit_count,
-                               armor_reset_epoch,
-                               ArmorLink_IsCounterResetAckActive(),
-                               armor_reset_sequence);
+      ArmorApp_SendStatus();
     }
     armor_last_heartbeat_tick = now;
     armor_led_hit_started_tick = now;
@@ -156,11 +157,7 @@ void ArmorApp_RunOnce(void)
     }
     else
     {
-      ArmorProtocol_SendStatus(armor_small_hit_count,
-                               armor_big_hit_count,
-                               armor_reset_epoch,
-                               ArmorLink_IsCounterResetAckActive(),
-                               armor_reset_sequence);
+      ArmorApp_SendStatus();
     }
     armor_last_heartbeat_tick = now;
   }

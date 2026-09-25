@@ -97,7 +97,7 @@ void armor_link_init(armor_link_packet_callback_t callback)
     debug_mode_mask = 0U;
 }
 
-void armor_link_set_debug_mode(uint8_t enabled)
+void armor_link_set_debug_mode_all(uint8_t enabled)
 {
     debug_mode_mask = enabled != 0U
                           ? (uint8_t)((1UL << REFEREE_MAIN_ARMOR_COUNT) - 1UL)
