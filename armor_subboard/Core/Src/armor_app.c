@@ -30,6 +30,7 @@ static uint8_t armor_adc_debug_recent_index;
 static bool armor_adc_debug_capture_active;
 static uint32_t armor_adc_debug_capture_deadline;
 static uint16_t armor_adc_debug_capture_peak;
+volatile uint32_t armor_adc_debug_hit_count_debug;
 
 static void ArmorApp_SendStatus(void)
 {
@@ -84,6 +85,7 @@ static void ArmorApp_ResetAdcDebugCapture(uint32_t now)
   armor_adc_debug_capture_deadline = now;
   armor_adc_debug_capture_peak = 0U;
   armor_adc_hit_peak_debug = 0U;
+  armor_adc_debug_hit_count_debug = 0U;
   armor_adc_debug_dx_was_active = false;
   armor_adc_debug_last_hit_tick = now - ARMOR_HIT_COOLDOWN_MS;
 }
@@ -132,6 +134,7 @@ static void ArmorApp_UpdateAdcDebug(uint32_t now,
     armor_adc_debug_capture_deadline = now + ARMOR_ADC_DEBUG_CAPTURE_WINDOW_MS;
     armor_adc_debug_capture_peak = ArmorApp_GetRecentAdcPeak(adc_raw);
     armor_adc_hit_peak_debug = armor_adc_debug_capture_peak;
+    armor_adc_debug_hit_count_debug++;
     armor_adc_debug_last_hit_tick = now;
     armor_last_heartbeat_tick = now;
   }
