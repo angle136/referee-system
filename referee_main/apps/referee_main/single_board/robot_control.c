@@ -226,6 +226,17 @@ static void referee_send_armor_config(void)
         }
         frame[7] = sum;
 
+        /* Arm the receive parser before enabling ADC mode on the subboard.
+         * The subboard is allowed to answer immediately after C1, so waiting
+         * until BSP_UART_Send() returns can misclassify its first 11-byte D1
+         * frame as an 8-byte status frame.  That loses the ADC sample and can
+         * also feed a transition frame into the HP path.  When leaving debug,
+         * keep the old parser mode until the stop command is confirmed. */
+        if (adc_debug_active != 0U)
+        {
+            armor_link_set_debug_mode_port(port_id, 1U);
+        }
+
         int send_result = armor_uart[port_id] == 0
                               ? -1
                               : BSP_UART_Send(armor_uart[port_id],

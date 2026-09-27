@@ -7,6 +7,9 @@
 #include "armor_sensor.h"
 #include "main.h"
 
+#define ARMOR_ADC_DEBUG_PRETRIGGER_SAMPLES 16U
+#define ARMOR_ADC_DEBUG_CAPTURE_WINDOW_MS  20U
+
 static ArmorDetectorState_t armor_detector;
 static uint32_t armor_last_heartbeat_tick;
 static uint32_t armor_led_hit_started_tick;
@@ -19,6 +22,14 @@ static uint16_t armor_adc_history[ARMOR_ADC_HISTORY_COUNT];
 static uint8_t armor_adc_history_count;
 static uint8_t armor_adc_history_write_index;
 static bool armor_adc_debug_was_active;
+static bool armor_adc_debug_dx_was_active;
+static uint32_t armor_adc_debug_last_hit_tick;
+static uint16_t armor_adc_debug_recent[ARMOR_ADC_DEBUG_PRETRIGGER_SAMPLES];
+static uint8_t armor_adc_debug_recent_count;
+static uint8_t armor_adc_debug_recent_index;
+static bool armor_adc_debug_capture_active;
+static uint32_t armor_adc_debug_capture_deadline;
+static uint16_t armor_adc_debug_capture_peak;
 
 static void ArmorApp_SendStatus(void)
 {
@@ -61,6 +72,87 @@ static void ArmorApp_GetAdcHistory(uint16_t samples[ARMOR_ADC_HISTORY_COUNT])
   }
 }
 
+static void ArmorApp_ResetAdcDebugCapture(uint32_t now)
+{
+  for (uint8_t index = 0U; index < ARMOR_ADC_DEBUG_PRETRIGGER_SAMPLES; index++)
+  {
+    armor_adc_debug_recent[index] = 0U;
+  }
+  armor_adc_debug_recent_count = 0U;
+  armor_adc_debug_recent_index = 0U;
+  armor_adc_debug_capture_active = false;
+  armor_adc_debug_capture_deadline = now;
+  armor_adc_debug_capture_peak = 0U;
+  armor_adc_debug_dx_was_active = false;
+  armor_adc_debug_last_hit_tick = now - ARMOR_HIT_COOLDOWN_MS;
+}
+
+static uint16_t ArmorApp_GetRecentAdcPeak(uint16_t current)
+{
+  uint16_t peak = current;
+
+  for (uint8_t index = 0U; index < armor_adc_debug_recent_count; index++)
+  {
+    if (armor_adc_debug_recent[index] > peak)
+    {
+      peak = armor_adc_debug_recent[index];
+    }
+  }
+  return peak;
+}
+
+static bool ArmorApp_IsBigAdcSample(uint16_t adc_raw)
+{
+  return armor_detector.baseline_ready &&
+         (uint32_t)adc_raw >
+             (armor_detector.baseline + ARMOR_BIG_HIT_ADC_THRESHOLD);
+}
+
+static void ArmorApp_UpdateAdcDebug(uint32_t now,
+                                    uint16_t adc_raw,
+                                    uint8_t dx_level)
+{
+  bool dx_active = dx_level == ARMOR_DX_ACTIVE_HIGH;
+
+  armor_adc_debug_recent[armor_adc_debug_recent_index] = adc_raw;
+  armor_adc_debug_recent_index =
+      (uint8_t)((armor_adc_debug_recent_index + 1U) %
+                ARMOR_ADC_DEBUG_PRETRIGGER_SAMPLES);
+  if (armor_adc_debug_recent_count < ARMOR_ADC_DEBUG_PRETRIGGER_SAMPLES)
+  {
+    armor_adc_debug_recent_count++;
+  }
+
+  if (armor_adc_debug_capture_active && adc_raw > armor_adc_debug_capture_peak)
+  {
+    armor_adc_debug_capture_peak = adc_raw;
+  }
+
+  if (dx_active && !armor_adc_debug_dx_was_active &&
+      !armor_adc_debug_capture_active &&
+      (uint32_t)(now - armor_adc_debug_last_hit_tick) >=
+          ARMOR_HIT_COOLDOWN_MS)
+  {
+    armor_adc_debug_capture_active = true;
+    armor_adc_debug_capture_deadline = now + ARMOR_ADC_DEBUG_CAPTURE_WINDOW_MS;
+    armor_adc_debug_capture_peak = ArmorApp_GetRecentAdcPeak(adc_raw);
+    armor_adc_debug_last_hit_tick = now;
+    armor_last_heartbeat_tick = now;
+  }
+
+  armor_adc_debug_dx_was_active = dx_active;
+
+  if (armor_adc_debug_capture_active &&
+      (int32_t)(now - armor_adc_debug_capture_deadline) >= 0)
+  {
+    if (ArmorApp_IsBigAdcSample(armor_adc_debug_capture_peak))
+    {
+      ArmorApp_RecordAdc(armor_adc_debug_capture_peak);
+    }
+    armor_adc_debug_capture_active = false;
+  }
+}
+
 void ArmorApp_Init(void)
 {
   uint32_t now = HAL_GetTick();
@@ -84,6 +176,7 @@ void ArmorApp_Init(void)
   armor_adc_history_count = 0U;
   armor_adc_history_write_index = 0U;
   armor_adc_debug_was_active = false;
+  ArmorApp_ResetAdcDebugCapture(now);
 }
 
 void ArmorApp_RunOnce(void)
@@ -93,15 +186,18 @@ void ArmorApp_RunOnce(void)
   uint8_t dx_level;
   uint8_t reset_epoch;
   uint8_t reset_sequence;
+  bool adc_debug_active;
   ArmorHitType_t hit_type;
 
   ArmorLink_Process(now);
-  if (ArmorLink_IsAdcDebugActive() && !armor_adc_debug_was_active)
+  adc_debug_active = ArmorLink_IsAdcDebugActive();
+  if (adc_debug_active && !armor_adc_debug_was_active)
   {
     armor_adc_history_count = 0U;
     armor_adc_history_write_index = 0U;
+    ArmorApp_ResetAdcDebugCapture(now);
   }
-  armor_adc_debug_was_active = ArmorLink_IsAdcDebugActive();
+  armor_adc_debug_was_active = adc_debug_active;
   if (ArmorLink_TakeCounterReset(&reset_epoch, &reset_sequence))
   {
     armor_small_hit_count = 0U;
@@ -115,14 +211,23 @@ void ArmorApp_RunOnce(void)
   }
   adc_raw = ArmorSensor_ReadAdcRaw();
   dx_level = ArmorSensor_ReadDxLevel();
+
+  if (adc_debug_active)
+  {
+    ArmorApp_UpdateAdcDebug(now, (uint16_t)adc_raw, dx_level);
+  }
+
   hit_type = ArmorDetector_Update(&armor_detector, now, adc_raw, dx_level);
 
   if (armor_detector.baseline_ready && hit_type != ARMOR_HIT_NONE)
   {
     /* Retain every DX-confirmed raw sample so field tests reveal sensor
      * polarity and peak direction. Hit classification remains unchanged. */
-    ArmorApp_RecordAdc((uint16_t)adc_raw);
-    if (!ArmorLink_IsAdcDebugActive())
+    if (!adc_debug_active)
+    {
+      ArmorApp_RecordAdc((uint16_t)adc_raw);
+    }
+    if (!adc_debug_active)
     {
       if (hit_type == ARMOR_HIT_BIG)
       {

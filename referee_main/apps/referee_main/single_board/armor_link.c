@@ -62,7 +62,13 @@ static void armor_link_emit(uint8_t port_id, const uint8_t *data)
         return;
     }
 
-    reported_adc_debug[port_id] = 0U;
+    /* A stale status frame can still be in flight while ADC mode is being
+     * enabled.  Do not erase the last valid D1 sample just because that
+     * transition frame arrived after it. */
+    if ((debug_mode_mask & (uint8_t)(1U << port_id)) == 0U)
+    {
+        reported_adc_debug[port_id] = 0U;
+    }
     packet.armor_id = data[1] & REFEREE_MAIN_ARMOR_ID_MASK;
     packet.small_hit_count = (uint16_t)data[2] | ((uint16_t)data[3] << 8U);
     packet.big_hit_count = (uint16_t)data[4] | ((uint16_t)data[5] << 8U);
