@@ -607,8 +607,17 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
              (event.action == KK_UI_INPUT_UP ||
               event.action == KK_UI_INPUT_DOWN))
     {
-        ui_settings_selected =
-            (uint8_t)((ui_settings_selected + 1U) % UI_SETTINGS_ITEM_COUNT);
+        if (event.action == KK_UI_INPUT_UP)
+        {
+            ui_settings_selected =
+                (uint8_t)((ui_settings_selected + UI_SETTINGS_ITEM_COUNT - 1U) %
+                          UI_SETTINGS_ITEM_COUNT);
+        }
+        else
+        {
+            ui_settings_selected =
+                (uint8_t)((ui_settings_selected + 1U) % UI_SETTINGS_ITEM_COUNT);
+        }
         KK_UI_Invalidate();
     }
     else if (ui_page == UI_PAGE_SETTINGS && event.action == KK_UI_INPUT_OK)

@@ -119,10 +119,9 @@ void ArmorApp_RunOnce(void)
 
   if (armor_detector.baseline_ready && hit_type != ARMOR_HIT_NONE)
   {
-    if (adc_raw > armor_detector.baseline)
-    {
-      ArmorApp_RecordAdc((uint16_t)adc_raw);
-    }
+    /* Retain every DX-confirmed raw sample so field tests reveal sensor
+     * polarity and peak direction. Hit classification remains unchanged. */
+    ArmorApp_RecordAdc((uint16_t)adc_raw);
     if (!ArmorLink_IsAdcDebugActive())
     {
       if (hit_type == ARMOR_HIT_BIG)
