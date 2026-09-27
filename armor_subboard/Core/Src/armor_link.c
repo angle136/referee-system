@@ -32,10 +32,6 @@ static uint8_t armor_counter_reset_epoch;
 static uint8_t armor_counter_reset_sequence;
 static uint8_t armor_applied_reset_epoch;
 
-/* Ozone-visible diagnostics for the C1 -> ADC debug mode transition. */
-volatile uint32_t armor_adc_debug_active_debug;
-volatile uint32_t armor_adc_debug_config_count_debug;
-
 static bool ArmorLink_FrameValid(const uint8_t *frame)
 {
   uint8_t sum = 0U;
@@ -64,11 +60,6 @@ static void ArmorLink_HandleFrame(const uint8_t *frame, uint32_t now)
   armor_team = frame[2];
   ArmorProtocol_SetArmorId(frame[3]);
   armor_adc_debug_active = (frame[4] & ARMOR_LINK_MODE_ADC_DEBUG) != 0U;
-  armor_adc_debug_active_debug = armor_adc_debug_active ? 1U : 0U;
-  if (armor_adc_debug_active)
-  {
-    armor_adc_debug_config_count_debug++;
-  }
   if ((frame[4] & ARMOR_LINK_MODE_RESET_COUNTERS) == 0U)
   {
     armor_counter_reset_command_active = false;
@@ -201,8 +192,6 @@ void ArmorLink_Init(void)
   armor_counter_reset_epoch = 0U;
   armor_counter_reset_sequence = 0U;
   armor_applied_reset_epoch = 0U;
-  armor_adc_debug_active_debug = 0U;
-  armor_adc_debug_config_count_debug = 0U;
   (void)HAL_UART_Receive_IT(&huart2, &armor_rx_byte, 1U);
 }
 

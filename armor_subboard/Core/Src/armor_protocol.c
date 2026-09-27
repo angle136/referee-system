@@ -15,7 +15,6 @@ static Kfifo_t armor_tx_fifo;
 static ArmorProtocolTxPacket_t armor_tx_storage[ARMOR_TX_QUEUE_CAPACITY];
 static ArmorProtocolTxPacket_t armor_tx_active_packet;
 static volatile bool armor_tx_active;
-volatile uint32_t armor_adc_debug_tx_count_debug;
 static void ArmorProtocol_StartNext(void);
 
 static bool ArmorProtocol_Queue(const uint8_t *data, uint8_t length)
@@ -65,7 +64,6 @@ void ArmorProtocol_Init(void)
              ARMOR_TX_QUEUE_CAPACITY);
   armor_protocol_armor_id = ARMOR_ID;
   armor_tx_active = false;
-  armor_adc_debug_tx_count_debug = 0U;
 }
 
 void ArmorProtocol_SetArmorId(uint8_t armor_id)
@@ -123,7 +121,6 @@ void ArmorProtocol_SendAdcDebug(const uint16_t *samples)
     sum = (uint8_t)(sum + packet[index]);
   }
   packet[ARMOR_ADC_DEBUG_FRAME_SIZE - 1U] = sum;
-  armor_adc_debug_tx_count_debug++;
   (void)ArmorProtocol_Queue(packet, ARMOR_ADC_DEBUG_FRAME_SIZE);
 }
 
