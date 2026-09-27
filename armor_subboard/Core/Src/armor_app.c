@@ -83,6 +83,7 @@ static void ArmorApp_ResetAdcDebugCapture(uint32_t now)
   armor_adc_debug_capture_active = false;
   armor_adc_debug_capture_deadline = now;
   armor_adc_debug_capture_peak = 0U;
+  armor_adc_hit_peak_debug = 0U;
   armor_adc_debug_dx_was_active = false;
   armor_adc_debug_last_hit_tick = now - ARMOR_HIT_COOLDOWN_MS;
 }
@@ -119,6 +120,7 @@ static void ArmorApp_UpdateAdcDebug(uint32_t now,
   if (armor_adc_debug_capture_active && adc_raw > armor_adc_debug_capture_peak)
   {
     armor_adc_debug_capture_peak = adc_raw;
+    armor_adc_hit_peak_debug = armor_adc_debug_capture_peak;
   }
 
   if (dx_active && !armor_adc_debug_dx_was_active &&
@@ -129,6 +131,7 @@ static void ArmorApp_UpdateAdcDebug(uint32_t now,
     armor_adc_debug_capture_active = true;
     armor_adc_debug_capture_deadline = now + ARMOR_ADC_DEBUG_CAPTURE_WINDOW_MS;
     armor_adc_debug_capture_peak = ArmorApp_GetRecentAdcPeak(adc_raw);
+    armor_adc_hit_peak_debug = armor_adc_debug_capture_peak;
     armor_adc_debug_last_hit_tick = now;
     armor_last_heartbeat_tick = now;
   }

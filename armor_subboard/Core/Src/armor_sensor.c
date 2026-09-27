@@ -3,12 +3,18 @@
 
 volatile uint32_t armor_adc_raw_debug;
 volatile uint32_t armor_adc_voltage_mv_debug;
+volatile uint32_t armor_adc_hit_peak_debug;
+volatile uint32_t armor_adc_start_error_debug;
+volatile uint32_t armor_adc_poll_error_debug;
 
 void ArmorSensor_Init(void)
 {
   (void)HAL_ADCEx_Calibration_Start(&hadc1);
   armor_adc_raw_debug = 0U;
   armor_adc_voltage_mv_debug = 0U;
+  armor_adc_hit_peak_debug = 0U;
+  armor_adc_start_error_debug = 0U;
+  armor_adc_poll_error_debug = 0U;
 }
 
 uint32_t ArmorSensor_ReadAdcRaw(void)
@@ -17,12 +23,17 @@ uint32_t ArmorSensor_ReadAdcRaw(void)
 
   if (HAL_ADC_Start(&hadc1) != HAL_OK)
   {
+    armor_adc_start_error_debug++;
     return adc_raw;
   }
 
   if (HAL_ADC_PollForConversion(&hadc1, 10U) == HAL_OK)
   {
     adc_raw = HAL_ADC_GetValue(&hadc1);
+  }
+  else
+  {
+    armor_adc_poll_error_debug++;
   }
 
   (void)HAL_ADC_Stop(&hadc1);
