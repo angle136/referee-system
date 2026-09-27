@@ -492,12 +492,15 @@ static void ui_draw_menu_rows(int16_t x, const char *const *items,
 static void ui_draw_settings(int16_t x)
 {
     static const char *const items[] = {"TEAM", "RESET", "ADC"};
+    uint8_t first = ui_settings_selected < 2U
+                        ? 0U
+                        : (uint8_t)(ui_settings_selected - 1U);
 
     ui_draw_menu_rows(x,
                       items,
                       UI_SETTINGS_ITEM_COUNT,
                       ui_settings_selected,
-                      0U);
+                      first);
 }
 
 static void ui_draw_confirm(int16_t x)
