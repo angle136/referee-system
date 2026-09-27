@@ -101,6 +101,13 @@ static uint16_t ArmorApp_GetRecentAdcPeak(uint16_t current)
   return peak;
 }
 
+static bool ArmorApp_IsBigAdcSample(uint16_t adc_raw)
+{
+  return armor_detector.baseline_ready &&
+         (uint32_t)adc_raw >
+             (armor_detector.baseline + ARMOR_BIG_HIT_ADC_THRESHOLD);
+}
+
 static void ArmorApp_UpdateAdcDebug(uint32_t now,
                                     uint16_t adc_raw,
                                     uint8_t dx_level)
@@ -138,7 +145,10 @@ static void ArmorApp_UpdateAdcDebug(uint32_t now,
   if (armor_adc_debug_capture_active &&
       (int32_t)(now - armor_adc_debug_capture_deadline) >= 0)
   {
-    ArmorApp_RecordAdc(armor_adc_debug_capture_peak);
+    if (ArmorApp_IsBigAdcSample(armor_adc_debug_capture_peak))
+    {
+      ArmorApp_RecordAdc(armor_adc_debug_capture_peak);
+    }
     armor_adc_debug_capture_active = false;
   }
 }
