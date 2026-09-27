@@ -64,6 +64,7 @@ static uint8_t ui_home_selected;
 static uint8_t ui_armor_offset;
 static uint8_t ui_settings_selected;
 static uint8_t ui_debug_port;
+static uint8_t ui_debug_port_auto;
 static ui_confirm_action_t ui_confirm_action;
 static uint8_t ui_confirm_focus;
 static uint32_t ui_toast_until;
@@ -428,6 +429,25 @@ static void ui_draw_debug(int16_t x)
         armor_link_diagnostics_t diagnostics;
         char port_label[3] = {'P', (char)('0' + ui_debug_port), '\0'};
 
+        /* The physical armor UART is not necessarily port 0.  Select the
+         * first port that has produced a valid D1 frame, then let the user
+         * take over with UP/DOWN. */
+        if (ui_debug_port_auto != 0U)
+        {
+            for (uint8_t port = 0U; port < REFEREE_MAIN_ARMOR_COUNT; port++)
+            {
+                armor_link_diagnostics_t candidate;
+                armor_link_get_diagnostics(port, &candidate);
+                if (candidate.adc_debug != 0U)
+                {
+                    ui_debug_port = port;
+                    ui_debug_port_auto = 0U;
+                    break;
+                }
+            }
+            port_label[1] = (char)('0' + ui_debug_port);
+        }
+
         armor_link_get_diagnostics(ui_debug_port, &diagnostics);
         ui_text_main_large((int16_t)(x + 2), 0, port_label);
         ui_text_main_large((int16_t)(x + 38), 0,
@@ -626,6 +646,7 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
         {
             referee_control_start_adc_debug();
             ui_debug_port = 0U;
+            ui_debug_port_auto = 1U;
             ui_page = UI_PAGE_DEBUG;
             KK_UI_Invalidate();
             return;
@@ -660,6 +681,7 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
             ui_debug_port = (uint8_t)((ui_debug_port + 1U) %
                                       REFEREE_MAIN_ARMOR_COUNT);
         }
+        ui_debug_port_auto = 0U;
         KK_UI_Invalidate();
     }
     else if (ui_page == UI_PAGE_HOME && event.action == KK_UI_INPUT_UP)
@@ -768,6 +790,7 @@ static UINT ui_display_start(void)
     ui_armor_offset = 0U;
     ui_settings_selected = 0U;
     ui_debug_port = 0U;
+    ui_debug_port_auto = 0U;
     ui_confirm_action = UI_CONFIRM_NONE;
     ui_confirm_focus = UI_CONFIRM_FOCUS_CANCEL;
     ui_toast_until = 0U;
