@@ -492,12 +492,15 @@ static void ui_draw_menu_rows(int16_t x, const char *const *items,
 static void ui_draw_settings(int16_t x)
 {
     static const char *const items[] = {"TEAM", "RESET", "ADC"};
+    uint8_t first = ui_settings_selected < 2U
+                        ? 0U
+                        : (uint8_t)(ui_settings_selected - 1U);
 
     ui_draw_menu_rows(x,
                       items,
                       UI_SETTINGS_ITEM_COUNT,
                       ui_settings_selected,
-                      0U);
+                      first);
 }
 
 static void ui_draw_confirm(int16_t x)
@@ -604,8 +607,17 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
              (event.action == KK_UI_INPUT_UP ||
               event.action == KK_UI_INPUT_DOWN))
     {
-        ui_settings_selected =
-            (uint8_t)((ui_settings_selected + 1U) % UI_SETTINGS_ITEM_COUNT);
+        if (event.action == KK_UI_INPUT_UP)
+        {
+            ui_settings_selected =
+                (uint8_t)((ui_settings_selected + UI_SETTINGS_ITEM_COUNT - 1U) %
+                          UI_SETTINGS_ITEM_COUNT);
+        }
+        else
+        {
+            ui_settings_selected =
+                (uint8_t)((ui_settings_selected + 1U) % UI_SETTINGS_ITEM_COUNT);
+        }
         KK_UI_Invalidate();
     }
     else if (ui_page == UI_PAGE_SETTINGS && event.action == KK_UI_INPUT_OK)

@@ -256,6 +256,15 @@ static void armor_packet_received(uint8_t port_id, const armor_link_packet_t *pa
         return;
     }
 
+    if (armor_adc_debug_active != 0U &&
+        packet->frame_type != REFEREE_MAIN_ARMOR_DEBUG_CMD)
+    {
+        /* A normal status frame can already be queued when ADC mode starts.
+         * Never let that transition frame affect the HP/counter path. */
+        referee_state_mark_armor_seen(port_id);
+        return;
+    }
+
     if (packet->frame_type == REFEREE_MAIN_ARMOR_DEBUG_CMD)
     {
         /* ADC collection frames are diagnostics only. They must never enter
