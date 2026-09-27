@@ -19,6 +19,8 @@ static uint16_t armor_adc_history[ARMOR_ADC_HISTORY_COUNT];
 static uint8_t armor_adc_history_count;
 static uint8_t armor_adc_history_write_index;
 static bool armor_adc_debug_was_active;
+static bool armor_adc_debug_dx_was_active;
+static uint32_t armor_adc_debug_last_hit_tick;
 
 static void ArmorApp_SendStatus(void)
 {
@@ -84,6 +86,8 @@ void ArmorApp_Init(void)
   armor_adc_history_count = 0U;
   armor_adc_history_write_index = 0U;
   armor_adc_debug_was_active = false;
+  armor_adc_debug_dx_was_active = false;
+  armor_adc_debug_last_hit_tick = 0U;
 }
 
 void ArmorApp_RunOnce(void)
@@ -100,6 +104,8 @@ void ArmorApp_RunOnce(void)
   {
     armor_adc_history_count = 0U;
     armor_adc_history_write_index = 0U;
+    armor_adc_debug_dx_was_active = false;
+    armor_adc_debug_last_hit_tick = now - ARMOR_HIT_COOLDOWN_MS;
   }
   armor_adc_debug_was_active = ArmorLink_IsAdcDebugActive();
   if (ArmorLink_TakeCounterReset(&reset_epoch, &reset_sequence))
@@ -115,13 +121,34 @@ void ArmorApp_RunOnce(void)
   }
   adc_raw = ArmorSensor_ReadAdcRaw();
   dx_level = ArmorSensor_ReadDxLevel();
+
+  /* ADC debug capture follows the DX edge directly.  The field tool must
+   * still show samples when the big-hit threshold is intentionally set to
+   * its maximum value. */
+  if (ArmorLink_IsAdcDebugActive())
+  {
+    bool dx_active = dx_level == ARMOR_DX_ACTIVE_HIGH;
+    if (dx_active && !armor_adc_debug_dx_was_active &&
+        (uint32_t)(now - armor_adc_debug_last_hit_tick) >=
+            ARMOR_HIT_COOLDOWN_MS)
+    {
+      ArmorApp_RecordAdc((uint16_t)adc_raw);
+      armor_adc_debug_last_hit_tick = now;
+      armor_last_heartbeat_tick = now;
+    }
+    armor_adc_debug_dx_was_active = dx_active;
+  }
+
   hit_type = ArmorDetector_Update(&armor_detector, now, adc_raw, dx_level);
 
   if (armor_detector.baseline_ready && hit_type != ARMOR_HIT_NONE)
   {
     /* Retain every DX-confirmed raw sample so field tests reveal sensor
      * polarity and peak direction. Hit classification remains unchanged. */
-    ArmorApp_RecordAdc((uint16_t)adc_raw);
+    if (!ArmorLink_IsAdcDebugActive())
+    {
+      ArmorApp_RecordAdc((uint16_t)adc_raw);
+    }
     if (!ArmorLink_IsAdcDebugActive())
     {
       if (hit_type == ARMOR_HIT_BIG)
